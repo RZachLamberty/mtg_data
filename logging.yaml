@@ -1,0 +1,31 @@
+---
+version: 1
+disable_existing_loggers: False
+
+formatters:
+  default:
+    format: "%(asctime)s %(levelname)-8s [%(name)s.%(funcName)s:%(lineno)d] %(message)s"
+  simple:
+    format: "%(asctime)s %(levelname)-8s [%(name)s] %(message)s"
+  print:
+    format: "%(message)s"
+
+root:
+  level: DEBUG
+  handlers: [console]
+
+handlers:
+  console:
+    class: logging.StreamHandler
+    formatter: default
+    stream: ext://sys.stdout
+  print:
+    class: logging.StreamHandler
+    formatter: print
+    stream: ext://sys.stdout
+
+loggers:
+  print:
+    handlers: [print]
+    propagate: False
+...
