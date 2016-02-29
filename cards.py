@@ -16,6 +16,9 @@ Usage:
 
 import logging
 import os
+import requests
+
+from py2neo import neo4j, Graph
 
 
 # ----------------------------- #
@@ -28,6 +31,42 @@ CARD_URL = 'http://mtgjson.com/json/AllSets.json'
 # local html caching
 HTML_DIR = os.path.join(os.sep, 'tmp', 'local_html_cache')
 
+# neo4j db
+NEO_URL = os.environ.get('NEO4J_URL', 'http://neo4j:neo4j@localhost:7474/db/data')
+GRAPH = Graph(NEO_URL)
+INSERT_QRY = """
+MERGE (s:MtgSet {code: {mtgset}.code})
+  ON CREATE SET
+    s.name = {mtgset}.name,
+    s.releaseDate = {mtgset}.releaseDate,
+    s.type = {mtgset}.type
+WITH {mtgset}.cards as mtgcards, s
+UNWIND mtgcards  as mtgcard
+MERGE (card:MtgCard {id: mtgcard.id})
+  ON CREATE SET
+    card.artist = mtgcard.artist,
+    card.cmc = mtgcard.cmc,
+    card.colorIdentity = mtgcard.colorIdentity,
+    card.colors = mtgcard.colors,
+    card.imageName = mtgcard.imageName,
+    card.layout = mtgcard.layout,
+    card.manaCost = mtgcard.manaCost,
+    card.mciNumber = mtgcard.mciNumber,
+    card.multiverseid = mtgcard.multiverseid,
+    card.name = mtgcard.name,
+    card.number = mtgcard.number,
+    card.power = mtgcard.power,
+    card.rarity = mtgcard.rarity,
+    card.subtypes = mtgcard.subtypes,
+    card.text = mtgcard.text,
+    card.toughness = mtgcard.toughness,
+    card.type = mtgcard.type,
+    card.types = mtgcard.types
+MERGE (card)-[:PART_OF_SET]->(s)
+"""
+
+logging.getLogger('py2neo').setLevel(logging.WARNING)
+logging.getLogger('httpstream').setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
 
@@ -70,6 +109,7 @@ def get_cards(url=CARD_URL):
         for card in setdict['cards']:
             c = MtgCard()
             c.update(card)
+            c.update({'setname': setname})
             yield c
 
 
@@ -84,3 +124,28 @@ def cards_df(url=CARD_URL):
 
     """
     return pd.DataFrame(get_cards(url))
+
+
+def json_to_neo4j(url=CARD_URL, user='neo4j', pw='neo4j'):
+    """neo4j can directly load json, we just have to get the query right. I
+    think I have!
+
+    args:
+        url: (str) the url of the cards (must be a json api endpoint)
+        user: (str) username for the neo4j db
+        pw: (str) password for the neo4j db
+
+    returns:
+        None
+
+    """
+    # card name and set uniqueness
+    GRAPH.cypher.execute("create constraint on (s:MtgSet) assert s.code is unique")
+    GRAPH.cypher.execute("create constraint on (c:MtgCard) assert c.id is unique")
+
+    logger.info('getting card data from {}'.format(url))
+    cards = requests.get(url).json()
+    logger.info('bulk loading to neo4j')
+    for (setid, setdict) in cards.items():
+        logger.debug("inserting set {}".format(setid))
+        GRAPH.cypher.execute(INSERT_QRY, {'mtgset': setdict})
