@@ -18,6 +18,7 @@ import functools
 import logging
 import lxml.html
 import os
+import requests
 
 
 # ----------------------------- #
@@ -35,7 +36,8 @@ logger = logging.getLogger(__name__)
 #   utility                     #
 # ----------------------------- #
 
-def url2html(url, localdir=HTML_DIR, forcerefresh=False, hidden=True):
+def url2html(url, localdir=HTML_DIR, forcerefresh=False, hidden=True,
+             session=requests):
     """General purpose download tool; will save html files locally instead of
     making re-requests
 
@@ -45,6 +47,7 @@ def url2html(url, localdir=HTML_DIR, forcerefresh=False, hidden=True):
             (default: scrape.HTML_DIR)
         forcerefresh: (bool) whether or not we ignore local copy
         hidden: (bool) whether or not files are saved as hidden locally
+        session: (requests session) handy for multiple request scenarios
 
     returns:
         lxml.html object
@@ -65,7 +68,7 @@ def url2html(url, localdir=HTML_DIR, forcerefresh=False, hidden=True):
     # if we are calling out regardless (forcerefresh) or we have no local copy..
     if forcerefresh or not os.access(localname, os.R_OK):
         logger.debug('active download of url: {}'.format(url))
-        resp = SCG_SESSION.get(url)
+        resp = session.get(url)
         with open(localname, 'wb') as f:
             f.write(resp.content)
         return lxml.html.fromstring(resp.content)
