@@ -26,7 +26,7 @@ import requests
 # ----------------------------- #
 
 # local html caching
-HTML_DIR = os.path.join(os.sep, 'tmp', 'local_html_cache')
+HTML_DIR = os.path.join(os.sep, 'var', 'data', 'local_html_cache')
 
 NEO4J_URL = os.environ.get('NEO4J_URL', 'http://neo4j:neo4j@localhost:7474/db/data')
 logger = logging.getLogger(__name__)
