@@ -18,6 +18,8 @@ import logging
 import os
 import requests
 
+import common
+
 from py2neo import neo4j, Graph
 
 
@@ -32,8 +34,6 @@ CARD_URL = 'http://mtgjson.com/json/AllSets.json'
 HTML_DIR = os.path.join(os.sep, 'tmp', 'local_html_cache')
 
 # neo4j db
-NEO_URL = os.environ.get('NEO4J_URL', 'http://neo4j:neo4j@localhost:7474/db/data')
-GRAPH = Graph(NEO_URL)
 INSERT_QRY = """
 MERGE (s:MtgSet {code: {mtgset}.code})
   ON CREATE SET
@@ -42,7 +42,7 @@ MERGE (s:MtgSet {code: {mtgset}.code})
     s.type = {mtgset}.type
 WITH {mtgset}.cards as mtgcards, s
 UNWIND mtgcards  as mtgcard
-MERGE (card:MtgCard {id: mtgcard.id})
+MERGE (card:MtgCard {id: LOWER(mtgcard.name)})
   ON CREATE SET
     card.artist = mtgcard.artist,
     card.cmc = mtgcard.cmc,
@@ -61,7 +61,8 @@ MERGE (card:MtgCard {id: mtgcard.id})
     card.text = mtgcard.text,
     card.toughness = mtgcard.toughness,
     card.type = mtgcard.type,
-    card.types = mtgcard.types
+    card.types = mtgcard.types,
+    card.mtg_id = mtgcard.id
 MERGE (card)-[:PART_OF_SET]->(s)
 """
 
@@ -126,7 +127,7 @@ def cards_df(url=CARD_URL):
     return pd.DataFrame(get_cards(url))
 
 
-def json_to_neo4j(url=CARD_URL, user='neo4j', pw='neo4j'):
+def json_to_neo4j(url=CARD_URL, neo4jurl=common.NEO4J_URL):
     """neo4j can directly load json, we just have to get the query right. I
     think I have!
 
@@ -140,12 +141,14 @@ def json_to_neo4j(url=CARD_URL, user='neo4j', pw='neo4j'):
 
     """
     # card name and set uniqueness
-    GRAPH.cypher.execute("create constraint on (s:MtgSet) assert s.code is unique")
-    GRAPH.cypher.execute("create constraint on (c:MtgCard) assert c.id is unique")
+    graph = Graph(neo4jurl)
+
+    graph.cypher.execute("create constraint on (s:MtgSet) assert s.code is unique")
+    graph.cypher.execute("create constraint on (c:MtgCard) assert c.id is unique")
 
     logger.info('getting card data from {}'.format(url))
-    cards = requests.get(url).json()
+    jcards = requests.get(url).json()
     logger.info('bulk loading to neo4j')
-    for (setid, setdict) in cards.items():
+    for (setid, setdict) in jcards.items():
         logger.debug("inserting set {}".format(setid))
-        GRAPH.cypher.execute(INSERT_QRY, {'mtgset': setdict})
+        graph.cypher.execute(INSERT_QRY, {'mtgset': setdict})
