@@ -16,25 +16,67 @@ Usage:
 
 import datetime
 import functools
-import logging
+import itertools
+import json
+import lxml.html
+import os
 import re
 import requests
+import yaml
 
 import tqdm
+import eri.logging as logging
+import eri.html.utils
 
 import common
 import decks
+
+from py2neo import Graph
 
 
 # ----------------------------- #
 #   Module Constants            #
 # ----------------------------- #
 
-HERE = os.path.dirname(os.path.realpath(__file__))
-logger = logging.getLogger("scgdecks")
-LOGCONF = os.path.join(HERE, 'logging.yaml')
-with open(LOGCONF, 'rb') as f:
-    logging.config.dictConfig(yaml.load(f))
+RESULT_REGEX = r'^(?P<finish>\d+)(?:th|rd|st) place at \w+ on (?P<date>\d{1,2}/\d{1,2}/\d{2,4})$'
+DECK_URL = 'http://sales.starcitygames.com//deckdatabase/deckshow.php?'
+SCG_SESSION = None
+
+INSERT_DECKS_QRY = """
+UNWIND {decks} as deck
+MERGE (d:MtgDeck {id: deck.url})
+  ON CREATE SET
+    d :SCG,
+    d.author = deck.author,
+    d.authorurl = deck.authorurl,
+    d.date = deck.date,
+    d.event = deck.event,
+    d.eventurl = deck.eventurl,
+    d.finish = deck.finish,
+    d.name = deck.name,
+    d.url = deck.url
+"""
+
+INSERT_BOARDS_QRY = """
+UNWIND {decks} as deck
+MATCH (d:MtgDeck {id: deck.url})
+WITH deck.mainboard as mainboard, deck.sideboard as sideboard, d
+UNWIND mainboard as card
+MATCH (c:MtgCard {id: card.cardname})
+WITH card, d, c, sideboard
+MERGE (d)<-[r:MAINBOARD]-(c)
+  ON CREATE SET
+    r.qty = card.qty
+WITH sideboard, d
+UNWIND sideboard as card
+MATCH (c:MtgCard {id: card.cardname})
+WITH card, d, c
+MERGE (d)<-[r:SIDEBOARD]-(c)
+  ON CREATE SET
+    r.qty = card.qty
+"""
+
+logger = logging.getLogger(__name__)
 
 
 # ----------------------------- #
@@ -87,7 +129,7 @@ class ScgDeck(decks.MtgDeck):
 
         """
         self.url = url
-        self.root = common.url2html(url)
+        self.root = common.url2html(url, session=SCG_SESSION)
         self._author = None
         self._authorurl = None
         self._name = None
@@ -221,6 +263,27 @@ class ScgDeck(decks.MtgDeck):
                 raise ScgDeckParseError("can't find the deck sideboard")
         return self._sideboard
 
+    def to_dict(self):
+        return {
+            'author': self.author,
+            'authorurl': self.authorurl,
+            'date': '{:%F}'.format(self.date),
+            'event': self.event,
+            'eventurl': self.eventurl,
+            'finish': self.finish,
+            'mainboard': [
+                {'cardname': k, 'qty': v} for (k, v) in self.mainboard.items()
+            ],
+            'name': self.name,
+            'sideboard': [
+                {'cardname': k, 'qty': v} for (k, v) in self.sideboard.items()
+            ],
+            'url': self.url,
+        }
+
+    def to_json(self):
+        return json.dumps(self.to_dict())
+
 
 class ScgParseError(Exception):
     def __init__(self, msg):
@@ -274,3 +337,49 @@ def scg_url_blocks():
         for a in root.cssselect('tr:nth-child(106) a')
         if 'Next' not in a.text
     ]
+
+
+def chunks(n, iterable):
+    it = iter(iterable)
+    while True:
+        chunk = tuple(itertools.islice(it, n))
+        if not chunk:
+            return
+        yield chunk
+
+
+def load_decks_to_neo4j():
+    graph = Graph(common.NEO4J_URL)
+
+    # card name and set uniqueness
+    graph.cypher.execute(
+        "create constraint on (d:MtgDeck) assert d.id is unique"
+    )
+
+    logger.info('bulk loading to neo4j')
+    for deckChunk in chunks(1000, scg_decks()):
+        jsonChunk = []
+        for d in deckChunk:
+            try:
+                jsonChunk.append(d.to_dict())
+            except ScgDeckParseError:
+                continue
+        json_to_neo4j(jsonChunk, graph)
+
+
+def json_to_neo4j(jsonChunk, graphCon):
+    """neo4j can directly load json, we just have to get the query right. I
+    think I have!
+
+    args:
+        jsonChunk: (json str) str representation of decks which will be unwound
+            in cypher query spelled out below
+        graphCon: (py2neo.Graph connection) connection to neo4j db into which we
+            are upserting
+
+    returns:
+        None
+
+    """
+    graphCon.cypher.execute(INSERT_DECKS_QRY, parameters={'decks': jsonChunk})
+    graphCon.cypher.execute(INSERT_BOARDS_QRY, parameters={'decks': jsonChunk})

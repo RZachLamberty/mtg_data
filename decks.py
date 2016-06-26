@@ -21,8 +21,6 @@ import logging
 #   Module Constants            #
 # ----------------------------- #
 
-DECK_URL = 'http://sales.starcitygames.com//deckdatabase/deckshow.php?'
-
 logger = logging.getLogger(__name__)
 
 
