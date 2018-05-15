@@ -102,6 +102,7 @@ class ScgDeck(decks.Deck):
         self._finish = None
         self._mainboard = None
         self._sideboard = None
+        self._format = None
 
     @property
     def author(self):
@@ -223,6 +224,16 @@ class ScgDeck(decks.Deck):
                 raise ScgDeckParseError("can't find the deck sideboard")
         return self._sideboard
 
+    @property
+    def format(self):
+        if self._format is None:
+            try:
+                fmt = self.root.find('.//div[@class="deck_format"]').text.lower()
+                self._format = fmt
+            except:
+                raise ScgDeckParseError("can't find the deck format")
+        return self._format
+
     def to_dict(self):
         return {
             'author': self.author,
@@ -234,6 +245,7 @@ class ScgDeck(decks.Deck):
             'mainboard': [
                 {'cardname': k, 'qty': v} for (k, v) in self.mainboard.items()
             ],
+            'format': self.format,
             'name': self.name,
             'sideboard': [
                 {'cardname': k, 'qty': v} for (k, v) in self.sideboard.items()
@@ -260,11 +272,12 @@ def scg_decks(includeTest=False):
 
 
 @require_scg_session
-def scg_decklist_urls(includeTest=False):
+def scg_decklist_urls(include_test=False):
     """generator of urls for decklists on SCG's deck database
 
     args:
-        includeTest: (bool) whether or not to include test decks (there are many)
+        include_test: (bool) whether or not to include test decks (there are
+            many). this is not currently implemented, fwiw (default: False)
 
     yields:
         urls of decks played in competitions
