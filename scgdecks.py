@@ -16,67 +16,27 @@ Usage:
 
 import datetime
 import functools
-import itertools
 import json
-import lxml.html
-import os
+import logging
 import re
-import requests
-import yaml
 
+import lxml.html
+import requests
 import tqdm
-import eri.logging as logging
-import eri.html.utils
 
 import common
 import decks
-
-from py2neo import Graph
 
 
 # ----------------------------- #
 #   Module Constants            #
 # ----------------------------- #
 
-RESULT_REGEX = r'^(?P<finish>\d+)(?:th|rd|st) place at \w+ on (?P<date>\d{1,2}/\d{1,2}/\d{2,4})$'
-DECK_URL = 'http://sales.starcitygames.com//deckdatabase/deckshow.php?'
+RESULT_REGEX = r'^(?P<finish>\d+)(?:th|rd|st) place at [\w ]+ on (?P<date>\d{1,2}/\d{1,2}/\d{2,4})$'
+DECK_URL = 'http://sales.starcitygames.com//deckdatabase/deckshow.php'
 SCG_SESSION = None
 
-INSERT_DECKS_QRY = """
-UNWIND {decks} as deck
-MERGE (d:MtgDeck {id: deck.url})
-  ON CREATE SET
-    d :SCG,
-    d.author = deck.author,
-    d.authorurl = deck.authorurl,
-    d.date = deck.date,
-    d.event = deck.event,
-    d.eventurl = deck.eventurl,
-    d.finish = deck.finish,
-    d.name = deck.name,
-    d.url = deck.url
-"""
-
-INSERT_BOARDS_QRY = """
-UNWIND {decks} as deck
-MATCH (d:MtgDeck {id: deck.url})
-WITH deck.mainboard as mainboard, deck.sideboard as sideboard, d
-UNWIND mainboard as card
-MATCH (c:MtgCard {id: card.cardname})
-WITH card, d, c, sideboard
-MERGE (d)<-[r:MAINBOARD]-(c)
-  ON CREATE SET
-    r.qty = card.qty
-WITH sideboard, d
-UNWIND sideboard as card
-MATCH (c:MtgCard {id: card.cardname})
-WITH card, d, c
-MERGE (d)<-[r:SIDEBOARD]-(c)
-  ON CREATE SET
-    r.qty = card.qty
-"""
-
-logger = logging.getLogger(__name__)
+LOGGER = logging.getLogger(__name__)
 
 
 # ----------------------------- #
@@ -94,7 +54,7 @@ def require_scg_session(f):
     def wrapped_f(*args, **kwargs):
         global SCG_SESSION
         if SCG_SESSION is None:
-            logger.info("establishing a persistent connection for SCG requests")
+            LOGGER.info("establishing a persistent connection for SCG requests")
             with requests.Session() as SCG_SESSION:
                 return f(*args, **kwargs)
         else:
@@ -109,10 +69,10 @@ class ScgDeckParseError(Exception):
 
 
 # ----------------------------- #
-#   deck defintions             #
+#   deck definition             #
 # ----------------------------- #
 
-class ScgDeck(decks.MtgDeck):
+class ScgDeck(decks.Deck):
     """This will not be as simple as cards, since decks have a lot of meaningful
     metadata (e.g. tournament result, format, date, etc)
 
@@ -287,7 +247,7 @@ class ScgDeck(decks.MtgDeck):
 
 class ScgParseError(Exception):
     def __init__(self, msg):
-        logger.error(msg)
+        LOGGER.error(msg)
         super().__init__()
 
 
@@ -313,12 +273,14 @@ def scg_decklist_urls(includeTest=False):
         None
 
     """
-    logger.info("collecting urls for scg decklists")
+    LOGGER.info("collecting urls for scg decklists")
     for urlblock in tqdm.tqdm(scg_url_blocks()):
         resp = SCG_SESSION.get(urlblock)
         root = lxml.html.fromstring(resp.content)
         decklinks = root.cssselect('#content strong')
-        eventtypes = root.cssselect('.deckdbbody2:nth-child(4) , .deckdbbody:nth-child(4)')
+        eventtypes = root.cssselect(
+            '.deckdbbody2:nth-child(4) , .deckdbbody:nth-child(4)'
+        )
         if len(decklinks) != len(eventtypes):
             err = "Unequal numbers of decks and decktypes on block url {}"
             err = err.format(urlblock)
@@ -337,49 +299,3 @@ def scg_url_blocks():
         for a in root.cssselect('tr:nth-child(106) a')
         if 'Next' not in a.text
     ]
-
-
-def chunks(n, iterable):
-    it = iter(iterable)
-    while True:
-        chunk = tuple(itertools.islice(it, n))
-        if not chunk:
-            return
-        yield chunk
-
-
-def load_decks_to_neo4j():
-    graph = Graph(common.NEO4J_URL)
-
-    # card name and set uniqueness
-    graph.cypher.execute(
-        "create constraint on (d:MtgDeck) assert d.id is unique"
-    )
-
-    logger.info('bulk loading to neo4j')
-    for deckChunk in chunks(1000, scg_decks()):
-        jsonChunk = []
-        for d in deckChunk:
-            try:
-                jsonChunk.append(d.to_dict())
-            except ScgDeckParseError:
-                continue
-        json_to_neo4j(jsonChunk, graph)
-
-
-def json_to_neo4j(jsonChunk, graphCon):
-    """neo4j can directly load json, we just have to get the query right. I
-    think I have!
-
-    args:
-        jsonChunk: (json str) str representation of decks which will be unwound
-            in cypher query spelled out below
-        graphCon: (py2neo.Graph connection) connection to neo4j db into which we
-            are upserting
-
-    returns:
-        None
-
-    """
-    graphCon.cypher.execute(INSERT_DECKS_QRY, parameters={'decks': jsonChunk})
-    graphCon.cypher.execute(INSERT_BOARDS_QRY, parameters={'decks': jsonChunk})
