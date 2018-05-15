@@ -18,8 +18,11 @@ import logging
 import os
 import requests
 
+import pandas as pd
+
 import common
 
+from mtgconstants import BASIC_LANDS
 
 
 # ----------------------------- #
@@ -73,6 +76,20 @@ def get_cards(url=CARD_URL):
             c.update(card)
             c.update({'setname': setname})
             yield c
+
+
+def all_land_card_names(url=CARD_URL):
+    return {
+        _.get('name') for _ in get_cards(url) if 'Land' in _.get('types', [])
+    }
+
+
+def all_card_names(url=CARD_URL, ignore_lands=True):
+    """a set of all the card names. ignore basic lands by default"""
+    cns = {_.get('name') for _ in get_cards(url)}
+    if ignore_lands:
+        cns = cns.difference(all_land_card_names(url))
+    return cns
 
 
 def cards_df(url=CARD_URL):
