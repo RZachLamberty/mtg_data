@@ -11,7 +11,7 @@ formatters:
     format: "%(message)s"
 
 root:
-  level: DEBUG
+  level: INFO
   handlers: [console]
 
 handlers:

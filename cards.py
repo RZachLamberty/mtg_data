@@ -14,15 +14,10 @@ Usage:
 
 """
 
-import logging
 import os
 import requests
 
 import pandas as pd
-
-import common
-
-from mtgconstants import BASIC_LANDS
 
 
 # ----------------------------- #
@@ -34,6 +29,7 @@ CARD_URL = 'http://mtgjson.com/json/AllSets.json'
 
 # local html caching
 HTML_DIR = os.path.join(os.sep, 'tmp', 'local_html_cache')
+
 
 # ----------------------------- #
 #   card class                  #
