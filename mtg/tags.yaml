@@ -30,11 +30,14 @@ _yaml_variables:
     colorless: ~
     devoid: ~
 
-# commandzone classifications -- should be turned into per-deck sets
+# commandzone classifications -- these are defined only in the context of a deck
+# and strategy
 deck_categories:
   standalone: ~
   amplify: ~
   stopgap: ~
+
+# persistent utility
 ramp: ~
 carddraw: ~
 counter:

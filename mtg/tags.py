@@ -8,6 +8,28 @@ Created: 2018-06-09
 
 Description:
 
+    this module is an implementation of a Tag object interface for use in mtg
+    deck building
+
+    "tags" in the context of mtg cards are a categorization with a hierarchy.
+    the general idea is to be able to talk about over-arching themes,
+    utilities, special use cases, as a collection of cards that have certain
+    abilities, or to look at a single card as having a collection of those
+    categorizations.
+
+    it's important to note that tags themselves can be hierarchical: e.g. while
+    removal is an important tag in its own right, there are several types of
+    removal and a given card could have multiple. for example:
+
+        + removal > artifact
+        + removal > enchantment
+        + removal > graveyard
+        + removal > land
+        + removal > all
+
+    in building a commander deck it is important to know that you have e.g.
+    at least *some* targeted enchantment removal, so while having lots of
+    removal is good having full coverage is the real goal
 
 Usage:
 <usage>
@@ -18,7 +40,6 @@ import copy
 import logging
 import os
 
-import anytree
 import networkx as nx
 import yaml
 
@@ -39,58 +60,17 @@ class MtgTagError(Exception):
     pass
 
 
-class MtgNode(anytree.Node):
-    @property
-    def longname(self):
-        return self.separator.join(
-            [""] + [_.name for _ in self.path if _.name != 'mtg'])
-
-    @property
-    def tappedout_name(self):
-        return '#{}'.format('_'.join(_.name.replace(' ', '_').replace('/', '')
-                                     for _ in self.path
-                                     if _.name != 'mtg'))
-
-
-class TagsOld(object):
-    def __init__(self, fyaml=F_TAGS):
-        with open(fyaml, 'r') as f:
-            self._tagdict = yaml.load(f)
-        self._tagdict.pop('_yaml_variables')
-        self._tagdict_to_nodes()
-
-    def _tagdict_to_nodes(self, parent_node=None, tagdict=None):
-        if parent_node is None:
-            parent_node = self.tags = MtgNode(name='mtg')
-
-        if tagdict is None:
-            tagdict = self._tagdict
-
-        for (tag, val) in tagdict.items():
-            this_node = MtgNode(name=tag, parent=parent_node)
-            if val is None:
-                # tag is a leaf node, we're done with this one
-                continue
-            elif isinstance(val, dict):
-                self._tagdict_to_nodes(parent_node=this_node,
-                                       tagdict=copy.deepcopy(val))
-            else:
-                raise MtgTagError("unhandled tag structure")
-
-    def __str__(self):
-        return '\n'.join(['{}{}'.format(pre, node.name)
-                          for pre, fill, node in anytree.RenderTree(self.tags)])
-
-    def __iter__(self):
-        return anytree.PreOrderIter(self.tags)
-
-
 class Tags(object):
-    def __init__(self, fyaml=F_TAGS):
-        with open(fyaml, 'r') as f:
-            self._tagdict = yaml.load(f)
-        self._tagdict.pop('_yaml_variables')
+    def __init__(self):
         self.tags = nx.DiGraph()
+        self._fyaml = None
+        self._tagdict = None
+
+    def init_from_yaml(self, fyaml=F_TAGS):
+        self._fyaml = fyaml
+        with open(self._fyaml, 'r') as fp:
+            self._tagdict = yaml.load(fp, Loader=yaml.FullLoader)
+        self._tagdict.pop('_yaml_variables')
         self._tagdict_to_nodes()
 
     def _tagdict_to_nodes(self, parent_node=None, tagdict=None):
@@ -122,7 +102,10 @@ class Tags(object):
         try:
             import matplotlib.pyplot as plt
             from networkx.drawing.nx_agraph import graphviz_layout
-        except ImportError:
+        except (ImportError, ModuleNotFoundError):
+            LOGGER.error(
+                "matplotlib and graphvix must be installed to execute this "
+                "function")
             raise
 
         pos = graphviz_layout(self.tags, prog='twopi', args='')
@@ -130,4 +113,3 @@ class Tags(object):
         nx.draw(self.tags, pos, node_size=20, alpha=0.5, node_color='blue',
                 with_labels=True)
         plt.show()
-t
