@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """
-Module: common.py
+Module: utils.py
 Author: zlamberty
 Created: 2016-02-28
 

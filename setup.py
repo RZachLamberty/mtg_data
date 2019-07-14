@@ -4,4 +4,5 @@ setup(name='mtg',
       description='mtg utilities',
       version='1.0.0',
       packages=find_packages(),
-      install_requires=[])
+      install_requires=[],
+      include_package_data=True, )

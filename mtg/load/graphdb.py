@@ -16,17 +16,16 @@ Usage:
 """
 
 import itertools
-import logging.config
+import logging
 import os
-import yaml
 
 import requests
 
 from neo4j.v1 import GraphDatabase, basic_auth
 
-from mtg import common, scgdecks as S
-
+from mtg import utils
 from mtg.cards import CARD_URL
+from mtg.extract.scg import ScgDeckParseError, scg_decks
 
 # ----------------------------- #
 #   Module Constants            #
@@ -34,11 +33,7 @@ from mtg.cards import CARD_URL
 
 NEO4J_URI = os.environ.get('NEO4J_URI', 'bolt://localhost:7687')
 
-HERE = os.path.dirname(os.path.realpath(__file__))
 LOGGER = logging.getLogger(__name__)
-LOGCONF = os.path.join(HERE, 'logging.yaml')
-with open(LOGCONF, 'rb') as f:
-    logging.config.dictConfig(yaml.load(f))
 logging.getLogger('py2neo').setLevel(logging.WARNING)
 logging.getLogger('httpstream').setLevel(logging.WARNING)
 
@@ -79,7 +74,7 @@ MERGE (card)-[:PART_OF_SET]->(s)
 """
 
 
-def mtgjson_to_neo4j(url=CARD_URL, neo4juri=common.NEO4J_URI, username=None,
+def mtgjson_to_neo4j(url=CARD_URL, neo4juri=utils.NEO4J_URI, username=None,
                      password=None):
     """neo4j can directly load json, we just have to get the query right. I
     think I have!
@@ -108,7 +103,7 @@ def mtgjson_to_neo4j(url=CARD_URL, neo4juri=common.NEO4J_URI, username=None,
 
 
 # ----------------------------- #
-#   scg deck uploading          #
+#   scg2 deck uploading          #
 # ----------------------------- #
 
 SCG_INSERT_DECKS_QRY = """
@@ -156,7 +151,7 @@ def _chunks(n, iterable):
         yield chunk
 
 
-def load_decks_to_neo4j(neo4juri=NEO4J_URI, username=None, password=None):
+def load_scg_decks_to_neo4j(neo4juri=NEO4J_URI, username=None, password=None):
     driver = GraphDatabase.driver(neo4juri, auth=basic_auth(username, password))
 
     with driver.session() as session:
@@ -164,12 +159,12 @@ def load_decks_to_neo4j(neo4juri=NEO4J_URI, username=None, password=None):
         session.run("create constraint on (d:MtgDeck) assert d.id is unique")
 
     LOGGER.info('bulk loading to neo4j')
-    for deckchunk in _chunks(1000, S.scg_decks()):
+    for deckchunk in _chunks(1000, scg_decks()):
         jsonchunk = []
         for d in deckchunk:
             try:
                 jsonchunk.append(d.to_dict())
-            except S.ScgDeckParseError:
+            except ScgDeckParseError:
                 continue
 
         with driver.session() as session:

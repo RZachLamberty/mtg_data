@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """
-Module: prices.py
+Module: mtggoldfish.py
 Author: zlamberty
 Created: 2018-10-05
 
@@ -14,7 +14,6 @@ Usage:
 
 """
 
-import argparse
 import functools
 import logging
 import logging.config
@@ -28,14 +27,14 @@ import requests
 
 from pandas.errors import EmptyDataError
 
+from mtg.config import F_LOGGING_CONFIG
+
 # ----------------------------- #
 #   Module Constants            #
 # ----------------------------- #
 
-HERE = os.path.dirname(os.path.realpath(__file__))
 LOGGER = logging.getLogger(__name__)
-LOGCONF = os.path.join(HERE, 'logging.yaml')
-with open(LOGCONF, 'rb') as f:
+with open(F_LOGGING_CONFIG, 'rb') as f:
     logging.config.dictConfig(yaml.load(f))
 LOGGER.setLevel(logging.DEBUG)
 
@@ -168,6 +167,7 @@ def load_from_csv(csvdir='.'):
     return df
 
 
+# todo: create setup.py entrypoint for this
 def main(user, pw, csvdir='.', force_refresh=False):
     """attempt to get the prices of every modern card
 
@@ -205,26 +205,3 @@ def main(user, pw, csvdir='.', force_refresh=False):
         df = df.reset_index(drop=True)
 
         df.to_csv(fcsv, header=True, index=False)
-
-
-# ----------------------------- #
-#   Command line                #
-# ----------------------------- #
-
-def parse_args():
-    """ Take a log file from the commmand line """
-    parser = argparse.ArgumentParser()
-    parser.add_argument("-x", "--xample", help="An Example",
-                        action='store_true')
-
-    args = parser.parse_args()
-
-    LOGGER.debug("arguments set to {}".format(vars(args)))
-
-    return args
-
-
-if __name__ == '__main__':
-    args = parse_args()
-
-    main()

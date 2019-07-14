@@ -15,22 +15,15 @@ Usage:
 """
 
 import logging
-import logging.config
-import os
 import re
 
 import requests
-import yaml
 
 # ----------------------------- #
 #   Module Constants            #
 # ----------------------------- #
 
-HERE = os.path.dirname(os.path.realpath(__file__))
 logger = logging.getLogger(__name__)
-LOGCONF = os.path.join(HERE, 'logging.yaml')
-with open(LOGCONF, 'rb') as f:
-    logging.config.dictConfig(yaml.load(f))
 
 # tell requests to shut up
 logging.getLogger('requests').setLevel(logging.WARN)
@@ -66,13 +59,12 @@ def reminder_text():
         kwname = kwdict['title'].lower()
         kwid = kwdict['pageid']
         try:
-            infobox = (requests.get(url='https://mtg.gamepedia.com/api.php',
-                                    params={'action': 'parse',
-                                            'pageid': kwid,
-                                            'prop': 'wikitext',
-                                            'format': 'json', })
-                .json()
-            ['parse']['wikitext']['*'])
+            resp = requests.get(url='https://mtg.gamepedia.com/api.php',
+                                params={'action': 'parse',
+                                        'pageid': kwid,
+                                        'prop': 'wikitext',
+                                        'format': 'json'})
+            infobox = resp.json()['parse']['wikitext']['*']
 
             remtextnow = re.search('\| reminder = (.*)', infobox, re.I)
             remtextnow = remtextnow.groups()[0].lower()

@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """
-Module: scgdecks.py
+Module: scg2.py
 Author: zlamberty
 Created: 2016-02-28
 
@@ -21,8 +21,9 @@ import re
 
 import lxml.html
 import requests
+import tqdm
 
-from mtg import common, decks
+from mtg import utils, decks
 
 from datetime import datetime
 
@@ -89,7 +90,7 @@ class ScgDeck(decks.Deck):
 
         """
         self.url = url
-        self.root = common.url2html(url, session=SCG_SESSION)
+        self.root = utils.url2html(url, session=SCG_SESSION)
         self._author = None
         self._authorurl = None
         self._name = None
@@ -296,7 +297,7 @@ def scg_decklist_urls(include_test=False):
         None
 
     """
-    LOGGER.info("collecting urls for scg decklists")
+    LOGGER.info("collecting urls for scg2 decklists")
     for urlblock in tqdm.tqdm(scg_url_blocks()):
         resp = SCG_SESSION.get(urlblock)
         root = lxml.html.fromstring(resp.content)

@@ -23,23 +23,19 @@ import numpy as _np
 import pandas as _pd
 import requests as _requests
 
-from mtg import cards, decks
-
 from json.decoder import JSONDecodeError as _JSONDecodeError
+
+from mtg import cards, decks
 
 # ----------------------------- #
 #   Module Constants            #
 # ----------------------------- #
 
-_HERE = _os.path.dirname(_os.path.realpath(__file__))
 _LOGGER = _logging.getLogger(__name__)
 _LOGGER.setLevel(_logging.DEBUG)
 
 _URL = 'http://tappedout.net/api/inventory/{owner:}/board/'
-_FIELDNAMES = ['Name',
-               'Edition',
-               'Qty',
-               'Foil', ]
+_FIELDNAMES = ['Name', 'Edition', 'Qty', 'Foil', ]
 _FNAME = _os.path.join(_os.sep, 'tmp', 'mtg_inventory.csv')
 
 

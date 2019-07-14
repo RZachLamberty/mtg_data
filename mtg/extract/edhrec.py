@@ -15,30 +15,27 @@ Usage:
 
 """
 
-import argparse
 import json
-import logging.config
+import logging
 import os
-import yaml
 
 import lxml.html
 import pandas as pd
 import requests
 
-from mtg import mtgconstants
+from mtg import constants
 
 # ----------------------------- #
 #   Module Constants            #
 # ----------------------------- #
 
-HERE = os.path.dirname(os.path.realpath(__file__))
 LOGGER = logging.getLogger(__name__)
-LOGCONF = os.path.join(HERE, 'logging.yaml')
-with open(LOGCONF, 'rb') as f:
-    logging.config.dictConfig(yaml.load(f))
+
 logging.getLogger('urllib3').setLevel(logging.WARNING)
 
 EDH_REC_URL = 'https://edhrec.com/commanders'
+
+HERE = os.path.dirname(os.path.realpath(__file__))
 F_EDHREC_CACHE = os.path.join(HERE, 'edhrec.csv')
 
 
@@ -56,7 +53,7 @@ def get_commanders(baseurl=EDH_REC_URL):
                                                  # for partner commanders:
                                                  include_multicards=True)
                           for color_combo
-                          in mtgconstants.ALL_COLOR_COMBOS_W_COLORLESS],
+                          in constants.ALL_COLOR_COMBOS_W_COLORLESS],
                     ignore_index=True)
           .reset_index(drop=True))
 
@@ -170,38 +167,3 @@ def _parse_edhrec_cardlist(url, include_multicards=False):
                                 for cardview in cardlist['cardviews']])
 
     return df_smry
-
-
-def main():
-    """docstring
-
-    args:
-
-    returns:
-
-    raises:
-
-    """
-    pass
-
-
-# ----------------------------- #
-#   Command line                #
-# ----------------------------- #
-
-def parse_args():
-    """ Take a log file from the commmand line """
-    parser = argparse.ArgumentParser()
-    parser.add_argument("-x", "--xample", help="An Example",
-                        action='store_true')
-
-    args = parser.parse_args()
-
-    LOGGER.debug("arguments set to {}".format(vars(args)))
-
-    return args
-
-
-if __name__ == '__main__':
-    args = parse_args()
-    main()

@@ -47,7 +47,6 @@ class Deck(object):
     cards in a deck of arbitrary size and shape
 
     """
-
     def __init__(self, cardnames=None, name=None, card_universe=None,
                  ignore_lands=True):
         """initialize the deck
@@ -301,7 +300,7 @@ class DeckPool(object):
             self.decks += decks
         except TypeError:
             try:
-                self.decks.append(deck)
+                self.decks.append(decks)
             except TypeError:
                 raise DeckError("append a single deck or list of decks")
 

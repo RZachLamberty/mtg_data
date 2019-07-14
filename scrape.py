@@ -7,22 +7,23 @@ Author: zlamberty
 Created: 2016-02-14
 
 Description:
-
+    a top-level script for reading cards and decks and persisting them to neo4j
 
 Usage:
-<usage>
+
+    $ python scrape.py
 
 """
 
 import argparse
+import logging.config
 import os
 import yaml
 
-import logging
 
-from mtg import cards, common, scgdecks
-
-from mtg.graphdb import NEO4J_URI
+from mtg import cards, utils, decks
+from mtg.config import F_LOGGING_CONFIG
+from mtg.load.graphdb import NEO4J_URI
 
 # ----------------------------- #
 #   Module Constants            #
@@ -36,23 +37,21 @@ F_CRED = os.path.expanduser(
 logging.getLogger("requests").setLevel(logging.WARNING)
 logger = logging.getLogger("scrape")
 
-HERE = os.path.dirname(os.path.realpath(__file__))
-with open(os.path.join(HERE, 'logging.yaml'), 'rb') as f:
+with open(F_LOGGING_CONFIG, 'rb') as f:
     logging.config.dictConfig(yaml.load(f))
-
 
 
 # ----------------------------- #
 #   Main routine                #
 # ----------------------------- #
 
-def main(decksrc='scg', neo4juri=NEO4J_URI, credyaml=F_CRED):
+def main(decksrc='scg2', neo4juri=NEO4J_URI, credyaml=F_CRED):
     """do ery ol thang
 
     args:
         decksrc: string, the source of deck database elements we should parse
             into json for loading into our neo4j database. currently, only
-            "scg" is a supported option (default: scg)
+            "scg2" is a supported option (default: scg2)
         neo4juri: string, the uri of the neo4j database into which we will load
             card and deck info (default: common.NEO4J_URI)
 
@@ -66,8 +65,8 @@ def main(decksrc='scg', neo4juri=NEO4J_URI, credyaml=F_CRED):
         creds = yaml.load(f)
 
     cards.json_to_neo4j(neo4juri=neo4juri, **creds)
-    if decksrc == 'scg':
-        scgdecks.load_decks_to_neo4j(neo4juri=neo4juri, **creds)
+    if decksrc == 'scg2':
+        decks.load_decks_to_neo4j(neo4juri=neo4juri, **creds)
     else:
         raise ValueError(
             "decksrc '{}' is not a valid deck src enumeration".format(decksrc))
@@ -82,11 +81,11 @@ def parse_args():
     parser = argparse.ArgumentParser()
 
     decksrc = "type of deck source we are using"
-    parser.add_argument("-d", "--decksrc", help=decksrc, default='scg')
+    parser.add_argument("-d", "--decksrc", help=decksrc, default='scg2')
 
     neo4juri = "uri of the neo4j database"
     parser.add_argument("-u", "--neo4juri", help=neo4juri,
-                        default=common.NEO4J_URI)
+                        default=utils.NEO4J_URI)
 
     credyaml = "credentials holding neo4j db credentials"
     parser.add_argument('-c', "--credyaml", help=credyaml, default=F_CRED)
