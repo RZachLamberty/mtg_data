@@ -16,7 +16,6 @@ Usage:
 """
 
 import itertools
-import logging
 import logging.config
 import os
 import yaml
@@ -25,10 +24,9 @@ import requests
 
 from neo4j.v1 import GraphDatabase, basic_auth
 
-import common
-import scgdecks as S
+from mtg import common, scgdecks as S
 
-from cards import CARD_URL
+from mtg.cards import CARD_URL
 
 # ----------------------------- #
 #   Module Constants            #

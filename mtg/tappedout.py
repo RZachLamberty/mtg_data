@@ -23,8 +23,7 @@ import numpy as _np
 import pandas as _pd
 import requests as _requests
 
-import cards
-import decks
+from mtg import cards, decks
 
 from json.decoder import JSONDecodeError as _JSONDecodeError
 
@@ -343,7 +342,7 @@ def main(url=_URL, owner='ndlambo', fname=_FNAME):
     inventory.name = inventory.name.str.replace('/', '//')
     inventory = inventory.rename(columns={'name': 'Name',
                                           'tla': 'Edition',
-                                          'qty': 'Qty',})
+                                          'qty': 'Qty', })
     inventory.loc[:, 'Foil'] = _np.where(inventory.foil.notnull(), 'Yes', 'No')
     inventory[_FIELDNAMES].to_csv(fname, index=False)
     print('wrote file {}'.format(fname))

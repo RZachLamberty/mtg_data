@@ -18,13 +18,11 @@ import argparse
 import os
 import yaml
 
-import eri.logging as logging
+import logging
 
-import cards
-import common
-import scgdecks
+from mtg import cards, common, scgdecks
 
-from graphdb import NEO4J_URI
+from mtg.graphdb import NEO4J_URI
 
 # ----------------------------- #
 #   Module Constants            #
@@ -33,10 +31,15 @@ from graphdb import NEO4J_URI
 # credential file
 F_CRED = os.path.expanduser(
     os.path.join('~', '.secrets', 'aws.neo4j.credentials.yaml'))
+
 # logging and file IO constants
 logging.getLogger("requests").setLevel(logging.WARNING)
 logger = logging.getLogger("scrape")
-logging.configure()
+
+HERE = os.path.dirname(os.path.realpath(__file__))
+with open(os.path.join(HERE, 'logging.yaml'), 'rb') as f:
+    logging.config.dictConfig(yaml.load(f))
+
 
 
 # ----------------------------- #

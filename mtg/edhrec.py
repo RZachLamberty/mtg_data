@@ -17,7 +17,6 @@ Usage:
 
 import argparse
 import json
-import logging
 import logging.config
 import os
 import yaml
@@ -26,7 +25,7 @@ import lxml.html
 import pandas as pd
 import requests
 
-import mtgconstants
+from mtg import mtgconstants
 
 # ----------------------------- #
 #   Module Constants            #

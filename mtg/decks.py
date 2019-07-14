@@ -18,7 +18,7 @@ import logging as _logging
 
 import numpy as _np
 
-import cards
+from mtg import cards
 
 # ----------------------------- #
 #   Module Constants            #

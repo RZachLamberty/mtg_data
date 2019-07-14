@@ -22,8 +22,7 @@ import re
 import lxml.html
 import requests
 
-import common
-import decks
+from mtg import common, decks
 
 from datetime import datetime
 

@@ -1,5 +1,6 @@
 anytree
 lxml
+neo4j
 networkx
 numpy
 pandas
