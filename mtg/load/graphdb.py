@@ -21,7 +21,7 @@ import os
 
 import requests
 
-from neo4j.v1 import GraphDatabase, basic_auth
+from neo4j import GraphDatabase, basic_auth
 
 from mtg import utils
 from mtg.cards import CARD_URL
@@ -91,8 +91,8 @@ def mtgjson_to_neo4j(url=CARD_URL, neo4juri=utils.NEO4J_URI, username=None,
     # card name and set uniqueness
     driver = GraphDatabase.driver(neo4juri, auth=basic_auth(username, password))
     with driver.session() as session:
-        session.run("create constraint on (s:MtgSet) assert s.code is unique")
-        session.run("create constraint on (c:MtgCard) assert c.id is unique")
+        session.run("CREATE CONSTRAINT ON (s:MtgSet) ASSERT s.code IS UNIQUE")
+        session.run("CREATE CONSTRAINT ON (c:MtgCard) ASSERT c.id IS UNIQUE")
 
         LOGGER.info('getting card data from {}'.format(url))
         jcards = requests.get(url).json()
@@ -107,7 +107,7 @@ def mtgjson_to_neo4j(url=CARD_URL, neo4juri=utils.NEO4J_URI, username=None,
 # ----------------------------- #
 
 SCG_INSERT_DECKS_QRY = """
-UNWIND {decks} as deck
+UNWIND {decks} AS deck
 MERGE (d:MtgDeck {id: deck.url})
   ON CREATE SET
     d :SCG,
@@ -123,17 +123,17 @@ MERGE (d:MtgDeck {id: deck.url})
 """
 
 SCG_INSERT_BOARDS_QRY = """
-UNWIND {decks} as deck
+UNWIND {decks} AS deck
 MATCH (d:MtgDeck {id: deck.url})
-WITH deck.mainboard as mainboard, deck.sideboard as sideboard, d
-UNWIND mainboard as card
+WITH deck.mainboard AS mainboard, deck.sideboard AS sideboard, d
+UNWIND mainboard AS card
 MATCH (c:MtgCard {id: card.cardname})
 WITH card, d, c, sideboard
 MERGE (d)<-[r:MAINBOARD]-(c)
   ON CREATE SET
     r.qty = card.qty
 WITH sideboard, d
-UNWIND sideboard as card
+UNWIND sideboard AS card
 MATCH (c:MtgCard {id: card.cardname})
 WITH card, d, c
 MERGE (d)<-[r:SIDEBOARD]-(c)
@@ -156,7 +156,7 @@ def load_scg_decks_to_neo4j(neo4juri=NEO4J_URI, username=None, password=None):
 
     with driver.session() as session:
         # card name and set uniqueness
-        session.run("create constraint on (d:MtgDeck) assert d.id is unique")
+        session.run("CREATE CONSTRAINT ON (d:MtgDeck) ASSERT d.id IS UNIQUE")
 
     LOGGER.info('bulk loading to neo4j')
     for deckchunk in _chunks(1000, scg_decks()):

@@ -1,0 +1,114 @@
+# variables for re-use within the document (via & / * variable reference)
+_yaml_variables:
+  permanent_targets: &permanent_targets
+    all: ~
+    land: ~
+    creature: ~
+    planeswalker: ~
+    enchantment: ~
+    artifact: ~
+  tribes: &tribes
+    goblin: ~
+    mermaid: ~
+    ally: ~
+    soldier: ~
+    wizard: ~
+    dragon: ~
+  mana_types: &mana_types
+    plains: ~
+    island: ~
+    swamp: ~
+    mountain: ~
+    forest: ~
+  colors: &colors
+    white: ~
+    blue: ~
+    black: ~
+    red: ~
+    green: ~
+    gold: ~
+    colorless: ~
+    devoid: ~
+
+# commandzone classifications -- should be turned into per-deck sets
+deck_categories:
+  standalone: ~
+  amplify: ~
+  stopgap: ~
+ramp: ~
+carddraw: ~
+counter:
+  target:
+    all: ~
+    sorcery: ~
+    instant: ~
+    creature: ~
+  cmc_matters: ~
+removal:
+  target:
+    <<: *permanent_targets
+    graveyard: ~
+    multiple: ~
+  undone: ~
+wrath:
+  <<: *permanent_targets
+  graveyard: ~
+
+# themes
+anthem: ~
+blink:
+  target:
+    <<: *permanent_targets
+  many: ~
+  repeatable: ~
+  slow: ~
+  engine: ~
+  one: ~
+  two: ~
+blinkable:
+  sucks: ~
+bounce: ~
+clone: ~
+defender: ~
+discard: ~
+engine: ~
+etb: ~
+etb_matters: ~
+fixing: ~
+freeze: ~
+handsize:
+  no_limit: ~
+handsize_matters: ~
+landfall: ~
+landwalk:
+  <<: *mana_types
+lifegain: ~
+lifedrain: ~
+protection:
+  <<: *colors
+recursion:
+  target:
+    <<: *permanent_targets
+    sorcery: ~
+    instant: ~
+repeatable: ~
+scry: ~
+single_use: ~
+tapdown: ~
+tax: ~
+treason: ~
+tribal: *tribes
+tribe_matters: *tribes
+turns: ~
+tutor:
+  target:
+    <<: *permanent_targets
+    instant: ~
+    sorcery: ~
+    multiple: ~
+unblockable: ~
+untap:
+  target:
+    <<: *permanent_targets
+  many: ~
+untappable: ~
