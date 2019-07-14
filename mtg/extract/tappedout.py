@@ -15,17 +15,20 @@ Usage:
 
 """
 
+import collections as _collections
 import logging as _logging
 import os as _os
+import re as _re
 
 import lxml.html as _html
 import numpy as _np
+import networkx as _nx
 import pandas as _pd
 import requests as _requests
 
 from json.decoder import JSONDecodeError as _JSONDecodeError
 
-from mtg import cards, decks
+from mtg import cards, decks, tags
 
 # ----------------------------- #
 #   Module Constants            #
@@ -37,6 +40,10 @@ _LOGGER.setLevel(_logging.DEBUG)
 _URL = 'http://tappedout.net/api/inventory/{owner:}/board/'
 _FIELDNAMES = ['Name', 'Edition', 'Qty', 'Foil', ]
 _FNAME = _os.path.join(_os.sep, 'tmp', 'mtg_inventory.csv')
+
+
+class TappedOutError(Exception):
+    pass
 
 
 # ----------------------------- #
@@ -160,6 +167,115 @@ class TappedoutDeck(decks.Deck):
                          name=self.deckid,
                          card_universe=card_universe,
                          ignore_lands=ignore_lands, )
+
+
+# ----------------------------- #
+# tags                          #
+# ----------------------------- #
+
+def get_categories(deckid):
+    """given a tappedout deck id, get all tagged custom categories for that deck
+
+    "categories" is the TO name for what we internally call a tag
+
+    args:
+        deckid (str): tappedout.net deck id
+
+    """
+    resp = _requests.get('http://tappedout.net/mtg-decks/{}/'.format(deckid),
+                         params={'cat': 'custom'})
+    root = _html.fromstring(resp.text)
+    mbc_xp = './/div[contains(@class, "board-container")]'
+    mainboard_container = root.xpath(mbc_xp)[0]
+    categories = _collections.defaultdict(list)
+
+    cd_xp = './/div[contains(@class, "board-col")]//h3'
+    for cat_div in mainboard_container.xpath(cd_xp):
+        category = '#{}'.format(cat_div
+                                .text
+                                .strip()
+                                .split('\xa0')
+                                [0]
+                                .replace(' ', '_')
+                                .lower())
+        if category == '#other':
+            continue
+        cat_ul = cat_div.getnext()
+        cardnames = [_.attrib['data-name'] for _ in cat_ul.xpath('./li/a')]
+        for cardname in cardnames:
+            categories[cardname].append(category)
+
+    return categories
+
+
+def tappedout_categories_to_tags(deckid, categories):
+    """given categories as represented above, create a network linking cards to
+    categories and categories to tags
+
+    the mapping between categories and tags is effectively one-to-one, but this
+    model supports the ability to have "dangling" categories (which don't match
+    to any known tag)
+
+    """
+    # get a list of known tags and mappings from TO categories to them
+    catgraph = tags.Tags().tags.copy()
+    _nx.set_node_attributes(catgraph, 'Tag', 'label')
+    _nx.set_edge_attributes(catgraph, 'IS_SUBTAG_OF', '_type')
+
+    # let's handle the mapping between tappedout categories and tags.
+    def tagname_to_cat(tagname):
+        cat = _re.sub('mtg:?', '', tagname)
+        cat = _re.sub('deck_categories:?', '', cat)
+        cat = _re.sub(':', '_', cat)
+        cat = '#{}'.format(cat)
+        return cat
+
+    categories_to_tags = {tagname_to_cat(tagname): tagname
+                          for tagname in catgraph
+                          if tagname not in ['mtg', 'mtg:deck_categories']}
+
+    # let's handle the deck node before we get into the nitty gritty
+    catgraph.add_node(deckid, label='Deck', is_tappedout=True)
+
+    # the tappedout categories of amplify, standalone, and stopgap only have
+    # meaning in the context of the given deckid. we chose to represent these as
+    # subcategories of the broader category "amplify" (etc) named for their
+    # decks (similar to how goblin tribal cards are "tribal:goblin")
+    for deckcat in ['amplify', 'standalone', 'stopgap']:
+        old_tagname = 'mtg:deck_categories:{}'.format(deckcat)
+        new_tagname = 'mtg:deck_categories:{}:{}'.format(deckcat,
+                                                         deckid.replace(':',
+                                                                        ''))
+        catgraph.add_node(new_tagname, label="Tag")
+        catgraph.add_edge(new_tagname, old_tagname, _type='IS_SUBTAG_OF')
+        categories_to_tags['#{}_{}'.format(deckcat, deckid)] = new_tagname
+
+    # for each of the "known" categories above, pre-emptively add the tappedout
+    # node and real tag relationship
+    for (catname, tagname) in categories_to_tags.items():
+        catgraph.add_node(catname, label="TappedoutCategory")
+        catgraph.add_edge(catname, tagname, _type="IS_TAPPEDOUT_VERSION_OF")
+
+    # categories is a cardname: [to_cat1, to_cat2, ...] mapping. iterate through
+    # it, creating new nodes and edges to known tags. raise an error if a
+    # recommended category doesn't exist as a tag (fix whichever is incorrect,
+    # normalizing the category name to match prior tags or adding a new tag)
+    failures = []
+    for (cardname, category_list) in categories.items():
+        catgraph.add_node(cardname, label='Card')
+        catgraph.add_edge(cardname, deckid, _type='IS_IN_DECK')
+
+        for category in category_list:
+            if category in ['#amplify', '#standalone', '#stopgap']:
+                category = '{}_{}'.format(category, deckid)
+            catgraph.add_edge(cardname, category, _type='HAS_TO_CATEGORY')
+            if not category in categories_to_tags:
+                msg = 'tappedout category "{}" does not map to any known tag'
+                msg = msg.format(category)
+                _LOGGER.warning(msg)
+                failures.append([cardname, category, msg])
+
+    return catgraph
 
 
 # ----------------------------- #

@@ -23,7 +23,7 @@ import lxml.html
 import pandas as pd
 import requests
 
-from mtg import constants
+from mtg import colors
 
 # ----------------------------- #
 #   Module Constants            #
@@ -53,7 +53,7 @@ def get_commanders(baseurl=EDH_REC_URL):
                                                  # for partner commanders:
                                                  include_multicards=True)
                           for color_combo
-                          in constants.ALL_COLOR_COMBOS_W_COLORLESS],
+                          in colors.ALL_COLOR_COMBOS_W_COLORLESS],
                     ignore_index=True)
           .reset_index(drop=True))
 
