@@ -14,7 +14,6 @@ Usage:
 
 """
 
-import datetime
 import functools
 import json
 import logging
@@ -22,17 +21,18 @@ import re
 
 import lxml.html
 import requests
-import tqdm
 
 import common
 import decks
 
+from datetime import datetime
 
 # ----------------------------- #
 #   Module Constants            #
 # ----------------------------- #
 
-RESULT_REGEX = r'^(?P<finish>\d+)(?:th|rd|st) place at [\w ]+ on (?P<date>\d{1,2}/\d{1,2}/\d{2,4})$'
+RESULT_REGEX = (r'^(?P<finish>\d+)(?:th|rd|st) place at [\w ]+ on'
+                r' (?P<date>\d{1,2}/\d{1,2}/\d{2,4})$')
 DECK_URL = 'http://sales.starcitygames.com//deckdatabase/deckshow.php'
 SCG_SESSION = None
 
@@ -80,6 +80,7 @@ class ScgDeck(decks.Deck):
     deck database
 
     """
+
     @require_scg_session
     def __init__(self, url):
         """parse the SCG deck url into a deck object
@@ -108,7 +109,11 @@ class ScgDeck(decks.Deck):
     def author(self):
         if self._author is None:
             try:
-                self._author = self.root.cssselect('.player_name a')[0].text.lower()
+                self._author = (self.root
+                                .cssselect('.player_name a')
+                                [0]
+                                .text
+                                .lower())
             except:
                 raise ScgDeckParseError("can't find author name")
         return self._author
@@ -117,7 +122,10 @@ class ScgDeck(decks.Deck):
     def authorurl(self):
         if self._authorurl is None:
             try:
-                self._authorurl = self.root.cssselect('.player_name a')[0].get('href')
+                self._authorurl = (self.root
+                                   .cssselect('.player_name a')
+                                   [0]
+                                   .get('href'))
             except:
                 raise ScgDeckParseError("can't find author url")
         return self._authorurl
@@ -126,7 +134,11 @@ class ScgDeck(decks.Deck):
     def name(self):
         if self._name is None:
             try:
-                self._name = self.root.cssselect('.deck_title a')[0].text.lower()
+                self._name = (self.root
+                              .cssselect('.deck_title a')
+                              [0]
+                              .text
+                              .lower())
             except:
                 raise ScgDeckParseError("can't find deck name")
         return self._name
@@ -144,7 +156,10 @@ class ScgDeck(decks.Deck):
     def resulttext(self):
         if self._resulttext is None:
             try:
-                self._resulttext = self.resultelem.text_content().strip().lower()
+                self._resulttext = (self.resultelem
+                                    .text_content()
+                                    .strip()
+                                    .lower())
             except:
                 raise ScgDeckParseError("can't find result text")
         return self._resulttext
@@ -153,9 +168,9 @@ class ScgDeck(decks.Deck):
     def resultregmatch(self):
         if self._resultregmatch is None:
             try:
-                self._resultregmatch = re.search(
-                    RESULT_REGEX, self.resulttext
-                ).groupdict()
+                self._resultregmatch = (re.search(RESULT_REGEX,
+                                                  self.resulttext)
+                                        .groupdict())
             except:
                 raise ScgDeckParseError("can't regex parse result text")
         return self._resultregmatch
@@ -182,9 +197,8 @@ class ScgDeck(decks.Deck):
     def date(self):
         if self._date is None:
             try:
-                self._date = datetime.datetime.strptime(
-                    self.resultregmatch['date'], '%m/%d/%Y'
-                )
+                self._date = datetime.strptime(self.resultregmatch['date'],
+                                               '%m/%d/%Y')
             except:
                 raise ScgDeckParseError("can't find event date")
         return self._date
@@ -228,30 +242,29 @@ class ScgDeck(decks.Deck):
     def format(self):
         if self._format is None:
             try:
-                fmt = self.root.find('.//div[@class="deck_format"]').text.lower()
+                fmt = (self.root
+                       .find('.//div[@class="deck_format"]')
+                       .text
+                       .lower())
                 self._format = fmt
             except:
                 raise ScgDeckParseError("can't find the deck format")
         return self._format
 
     def to_dict(self):
-        return {
-            'author': self.author,
-            'authorurl': self.authorurl,
-            'date': '{:%F}'.format(self.date),
-            'event': self.event,
-            'eventurl': self.eventurl,
-            'finish': self.finish,
-            'mainboard': [
-                {'cardname': k, 'qty': v} for (k, v) in self.mainboard.items()
-            ],
-            'format': self.format,
-            'name': self.name,
-            'sideboard': [
-                {'cardname': k, 'qty': v} for (k, v) in self.sideboard.items()
-            ],
-            'url': self.url,
-        }
+        return {'author': self.author,
+                'authorurl': self.authorurl,
+                'date': '{:%F}'.format(self.date),
+                'event': self.event,
+                'eventurl': self.eventurl,
+                'finish': self.finish,
+                'mainboard': [{'cardname': k, 'qty': v}
+                              for (k, v) in self.mainboard.items()],
+                'format': self.format,
+                'name': self.name,
+                'sideboard': [{'cardname': k, 'qty': v}
+                              for (k, v) in self.sideboard.items()],
+                'url': self.url, }
 
     def to_json(self):
         return json.dumps(self.to_dict())
@@ -265,10 +278,8 @@ class ScgParseError(Exception):
 
 @require_scg_session
 def scg_decks(includeTest=False):
-    return decks._get_decks(
-        deckurls=scg_decklist_urls(includeTest=includeTest),
-        decktype=ScgDeck
-    )
+    return decks._get_decks(deckurls=scg_decklist_urls(includeTest=includeTest),
+                            decktype=ScgDeck)
 
 
 @require_scg_session
@@ -291,9 +302,8 @@ def scg_decklist_urls(include_test=False):
         resp = SCG_SESSION.get(urlblock)
         root = lxml.html.fromstring(resp.content)
         decklinks = root.cssselect('#content strong')
-        eventtypes = root.cssselect(
-            '.deckdbbody2:nth-child(4) , .deckdbbody:nth-child(4)'
-        )
+        eventtypes_css = '.deckdbbody2:nth-child(4) , .deckdbbody:nth-child(4)'
+        eventtypes = root.cssselect(eventtypes_css)
         if len(decklinks) != len(eventtypes):
             err = "Unequal numbers of decks and decktypes on block url {}"
             err = err.format(urlblock)
@@ -307,8 +317,6 @@ def scg_decklist_urls(include_test=False):
 def scg_url_blocks():
     resp = SCG_SESSION.get(url=DECK_URL, params={'limit': 100})
     root = lxml.html.fromstring(resp.content)
-    return [
-        a.attrib['href'].replace('&limit=limit', '')
-        for a in root.cssselect('tr:nth-child(106) a')
-        if 'Next' not in a.text
-    ]
+    return [a.attrib['href'].replace('&limit=limit', '')
+            for a in root.cssselect('tr:nth-child(106) a')
+            if 'Next' not in a.text]

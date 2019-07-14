@@ -1,0 +1,7 @@
+anytree
+lxml
+networkx
+numpy
+pandas
+pyyaml
+requests

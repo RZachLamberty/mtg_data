@@ -56,12 +56,9 @@ def url2html(url, localdir=HTML_DIR, forcerefresh=False, hidden=True,
 
     """
     # what is the local name?
-    localname = os.path.join(
-        localdir, '{}{}'.format(
-            '.' if hidden else '',
-            os.path.basename(url)
-        )
-    )
+    localname = os.path.join(localdir,
+                             '{}{}'.format('.' if hidden else '',
+                                           os.path.basename(url)))
 
     # if we are calling out regardless (forcerefresh) or we have no local copy..
     if forcerefresh or not os.access(localname, os.R_OK):

@@ -25,10 +25,10 @@ import requests
 
 from neo4j.v1 import GraphDatabase, basic_auth
 
+import common
 import scgdecks as S
 
 from cards import CARD_URL
-
 
 # ----------------------------- #
 #   Module Constants            #
@@ -44,7 +44,6 @@ with open(LOGCONF, 'rb') as f:
 logging.getLogger('py2neo').setLevel(logging.WARNING)
 logging.getLogger('httpstream').setLevel(logging.WARNING)
 
-
 # ----------------------------- #
 #   mtgjson uploading           #
 # ----------------------------- #
@@ -55,9 +54,9 @@ MERGE (s:MtgSet {code: {mtgset}.code})
     s.name = {mtgset}.name,
     s.releaseDate = {mtgset}.releaseDate,
     s.type = {mtgset}.type
-WITH {mtgset}.cards as mtgcards, s
-UNWIND mtgcards as mtgcard
-MERGE (card:MtgCard {id: LOWER(mtgcard.name)})
+WITH {mtgset}.cards AS mtgcards, s
+UNWIND mtgcards AS mtgcard
+MERGE (card:MtgCard {id: lower(mtgcard.name)})
   ON CREATE SET
     card.artist = mtgcard.artist,
     card.cmc = mtgcard.cmc,
@@ -81,8 +80,9 @@ MERGE (card:MtgCard {id: LOWER(mtgcard.name)})
 MERGE (card)-[:PART_OF_SET]->(s)
 """
 
+
 def mtgjson_to_neo4j(url=CARD_URL, neo4juri=common.NEO4J_URI, username=None,
-                  password=None):
+                     password=None):
     """neo4j can directly load json, we just have to get the query right. I
     think I have!
 
@@ -147,6 +147,7 @@ MERGE (d)<-[r:SIDEBOARD]-(c)
   ON CREATE SET
     r.qty = card.qty
 """
+
 
 def _chunks(n, iterable):
     it = iter(iterable)

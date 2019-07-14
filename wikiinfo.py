@@ -20,8 +20,7 @@ import os
 import re
 
 import requests
-import  yaml
-
+import yaml
 
 # ----------------------------- #
 #   Module Constants            #
@@ -46,16 +45,12 @@ def _keyword_urls():
     # two categories: keyword actions and keyword abilities
     for templatename in ['Template:Infobox action', 'Template:Infobox keyword']:
         url = 'https://mtg.gamepedia.com/api.php'
-        resp = requests.get(
-            url,
-            params={
-                'action': 'query',
-                'list': 'embeddedin',
-                'eititle': templatename,
-                'eilimit': 1000,
-                'format': 'json'
-            }
-        )
+        resp = requests.get(url,
+                            params={'action': 'query',
+                                    'list': 'embeddedin',
+                                    'eititle': templatename,
+                                    'eilimit': 1000,
+                                    'format': 'json'})
         j = resp.json()
         for item in j['query']['embeddedin']:
             yield item
@@ -71,19 +66,15 @@ def reminder_text():
         kwname = kwdict['title'].lower()
         kwid = kwdict['pageid']
         try:
-            infobox = requests.get(
-                url='https://mtg.gamepedia.com/api.php',
-                params={
-                    'action': 'parse',
-                    'pageid': kwid,
-                    'prop': 'wikitext',
-                    'format': 'json',
-                }
-            ).json()['parse']['wikitext']['*']
+            infobox = (requests.get(url='https://mtg.gamepedia.com/api.php',
+                                    params={'action': 'parse',
+                                            'pageid': kwid,
+                                            'prop': 'wikitext',
+                                            'format': 'json', })
+                .json()
+            ['parse']['wikitext']['*'])
 
-            remtextnow = re.search(
-                '\| reminder = (.*)', infobox, re.I
-            )
+            remtextnow = re.search('\| reminder = (.*)', infobox, re.I)
             remtextnow = remtextnow.groups()[0].lower()
             if remtextnow[-1] == '.':
                 remtextnow = remtextnow[:-1]

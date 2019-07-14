@@ -20,17 +20,14 @@ import numpy as _np
 
 import cards
 
-
 # ----------------------------- #
 #   Module Constants            #
 # ----------------------------- #
 
 _LOGGER = _logging.getLogger(__name__)
 _LOGGER.setLevel(_logging.INFO)
-_CARD_UNIVERSE = {
-    'no_lands': cards.all_card_names(ignore_lands=True),
-    'w_lands': cards.all_card_names(ignore_lands=False),
-}
+_CARD_UNIVERSE = {'no_lands': cards.all_card_names(ignore_lands=True),
+                  'w_lands': cards.all_card_names(ignore_lands=False), }
 
 
 # ----------------------------- #
@@ -50,6 +47,7 @@ class Deck(object):
     cards in a deck of arbitrary size and shape
 
     """
+
     def __init__(self, cardnames=None, name=None, card_universe=None,
                  ignore_lands=True):
         """initialize the deck
@@ -101,22 +99,18 @@ class Deck(object):
 
         # TODO: left off here
         nonland_cardnames = self.cardnames.intersection(
-            _CARD_UNIVERSE['no_lands']
-        )
+            _CARD_UNIVERSE['no_lands'])
         self.cardnames = _np.array(list(self.cardnames))
         self.nonland_cardnames = _np.array(list(nonland_cardnames))
 
         try:
             compliment_cardnames = set(self.card_universe).difference(
-                self.cardnames
-            )
+                self.cardnames)
             nonland_compliment_cardnames = compliment_cardnames.intersection(
-                _CARD_UNIVERSE['no_lands']
-            )
+                _CARD_UNIVERSE['no_lands'])
             self.compliment_cardnames = _np.array(list(compliment_cardnames))
             self.nonland_compliment_cardnames = _np.array(
-                list(nonland_compliment_cardnames)
-            )
+                list(nonland_compliment_cardnames))
         except TypeError:
             _LOGGER.debug('pretty big deck ya got there')
             self.compliment_cardnames = _np.empty(1)
@@ -133,12 +127,11 @@ class Deck(object):
         return cardnames
 
     def _split_two_part_cards(self, cardnames):
-        """some systems refer to cards as A // B -- split those into two cards"""
-        return {
-            c.strip()
-            for cardname in cardnames
-            for c in cardname.replace('//', '/').split('/')
-        }
+        """some systems refer to cards as A // B -- split those into two
+        cards"""
+        return {c.strip()
+                for cardname in cardnames
+                for c in cardname.replace('//', '/').split('/')}
 
     def _fix_weird_characters(self, cardnames):
         """for now the only example is AE, but some systems display pairs of
@@ -196,18 +189,14 @@ class Deck(object):
 
         # some sanity checks on the passed params
         if not n_in_deck + n_not_in_deck == size[1]:
-            msg = (
-                'n_in_deck and n_not_in_deck must sum to the requested number of'
-                ' columns in size'
-            )
+            msg = ('n_in_deck and n_not_in_deck must sum to the requested'
+                   ' number of columns in size')
             _LOGGER.error(msg)
             raise DeckError(msg)
 
         if n_in_deck == 0 and n_not_in_deck == 2:
-            _LOGGER.warning(
-                'sampling only cards *not* in this deck, you probably want to'
-                ' sample all cards'
-            )
+            _LOGGER.warning('sampling only cards *not* in this deck, you'
+                            ' probably want to sample all cards')
 
         # if we want all records to be unique, we simply iteratively add as many
         # records as remain, dedupe, and repeat until we are at the requested
@@ -225,32 +214,22 @@ class Deck(object):
             # build up our dataset in one or two steps
             concatable = []
             if n_in_deck:
-                c_in = _np.random.choice(
-                    self.nonland_cardnames if no_lands else self.cardnames,
-                    size_in,
-                    **kwargs
-                )
+                c_in = _np.random.choice((self.nonland_cardnames
+                                          if no_lands else self.cardnames),
+                                         size_in, **kwargs)
                 concatable.append(c_in)
 
             if n_not_in_deck:
-                c_not = _np.random.choice(
-                    (
-                        self.nonland_compliment_cardnames
-                        if no_lands
-                        else self.compliment_cardnames
-                    ),
-                    size_not,
-                    **kwargs
-                )
+                c_not = _np.random.choice((self.nonland_compliment_cardnames
+                                           if no_lands
+                                           else self.compliment_cardnames),
+                                          size_not, **kwargs)
                 concatable.append(c_not)
 
             # we built a list of one or two datasets in the two if statements
             # above, now stitch them together side-by-side (columnwise). then,
             # drop duplicates
-            c = _np.unique(
-                _np.concatenate(concatable, axis=1),
-                axis=0
-            )
+            c = _np.unique(_np.concatenate(concatable, axis=1), axis=0)
 
             # the above is either the number of records we requested (if all the
             # sampled pairs were unique) or less than what was requested. until
@@ -263,30 +242,23 @@ class Deck(object):
 
                 concatable_remaining = []
                 if n_in_deck:
-                    c_in_remaining = _np.random.choice(
-                        self.nonland_cardnames if no_lands else self.cardnames,
-                        size_in_remaining,
-                        **kwargs
-                    )
+                    c_in_remaining = _np.random.choice((self.nonland_cardnames
+                                                        if no_lands
+                                                        else self.cardnames),
+                                                       size_in_remaining,
+                                                       **kwargs)
                     concatable_remaining.append(c_in_remaining)
                 if n_not_in_deck:
                     c_not_remaining = _np.random.choice(
-                        (
-                            self.nonland_compliment_cardnames
-                            if no_lands
-                            else self.compliment_cardnames
-                        ),
-                        size_not_remaining,
-                        **kwargs
-                    )
+                        (self.nonland_compliment_cardnames
+                         if no_lands else self.compliment_cardnames),
+                        size_not_remaining, **kwargs)
                     concatable_remaining.append(c_not_remaining)
 
                 c_remaining = _np.concatenate(concatable_remaining, axis=1)
 
-                c = _np.unique(
-                    _np.concatenate((c, c_remaining), axis=0),
-                    axis=0
-                )
+                c = _np.unique(_np.concatenate((c, c_remaining), axis=0),
+                               axis=0)
             return c
 
         # no unique, no problem. the world is a lot simpler
@@ -319,6 +291,7 @@ def _get_decks(deckurls, decktype):
 
 class DeckPool(object):
     """a deck pool is a... pool... of decks"""
+
     def __init__(self):
         self.decks = []
 
@@ -357,12 +330,8 @@ class DeckPool(object):
             i0 = i * chunksize[0]
             i1 = min((i + 1) * chunksize[0], size[0])
             _LOGGER.debug('i0, i1 = {}, {}'.format(i0, i1))
-            c[i0: i1] = deck.choice(
-                (i1 - i0, size[1]),
-                n_in_deck=n_in_deck,
-                n_not_in_deck=n_not_in_deck,
-                **kwargs
-            )
+            c[i0: i1] = deck.choice((i1 - i0, size[1]), n_in_deck=n_in_deck,
+                                    n_not_in_deck=n_not_in_deck, **kwargs)
 
             if i1 == size[0]:
                 break
@@ -374,6 +343,7 @@ class DeckSampler(object):
     pool of known, validated deck recommendations
 
     """
+
     def __init__(self, deckpool, allcards):
         self.deckpool = deckpool
         self.allcards = allcards
@@ -392,41 +362,36 @@ class DeckSampler(object):
             np.ndarray: (n x 1) array of labels (0, 1)
 
         """
+        err_msg = None
         if not (0 <= f_true <= 1):
-            msg = "f_true must be between 0 and 1"
-            _LOGGER.error(msg)
-            raise DeckError(msg)
+            err_msg = "f_true must be between 0 and 1"
         if not (0 <= f_half <= 1):
-            msg = "f_half must be between 0 and 1"
-            _LOGGER.error(msg)
-            raise DeckError(msg)
+            err_msg = "f_half must be between 0 and 1"
         if not (0 <= f_true + f_half <= 1):
-            msg = "f_true + f_half must be between 0 and 1"
-            _LOGGER.error(msg)
-            raise DeckError(msg)
+            err_msg = "f_true + f_half must be between 0 and 1"
+
+        if err_msg is not None:
+            _LOGGER.error(err_msg)
+            raise DeckError(err_msg)
 
         n = int(n)
         ntrue = int(n * f_true)
         nhalf = int(n * f_half)
         nfalse = n - ntrue - nhalf
 
-        names = _np.concatenate(
-            [
-                self.deckpool.choice(
-                    (ntrue, 2), replace=True, force_unique=True,
-                    no_lands=no_lands
-                ),
-                self.deckpool.choice(
-                    (nhalf, 2), n_in_deck=1, n_not_in_deck=1, replace=True,
-                    force_unique=True, no_lands=no_lands
-                ),
-                self.allcards.choice(
-                    (nfalse, 2), replace=True, force_unique=True,
-                    no_lands=no_lands
-                ),
-            ],
-            axis=0
-        )
+        names = _np.concatenate([self.deckpool.choice((ntrue, 2),
+                                                      replace=True,
+                                                      force_unique=True,
+                                                      no_lands=no_lands),
+                                 self.deckpool.choice((nhalf, 2), n_in_deck=1,
+                                                      n_not_in_deck=1,
+                                                      replace=True,
+                                                      force_unique=True,
+                                                      no_lands=no_lands),
+                                 self.allcards.choice((nfalse, 2), replace=True,
+                                                      force_unique=True,
+                                                      no_lands=no_lands), ],
+                                axis=0)
 
         target = _np.zeros(n)
         target[:ntrue] = 1

@@ -24,6 +24,7 @@ import cards
 import common
 import scgdecks
 
+from graphdb import NEO4J_URI
 
 # ----------------------------- #
 #   Module Constants            #
@@ -31,8 +32,7 @@ import scgdecks
 
 # credential file
 F_CRED = os.path.expanduser(
-    os.path.join('~', '.secrets', 'aws.neo4j.credentials.yaml')
-)
+    os.path.join('~', '.secrets', 'aws.neo4j.credentials.yaml'))
 # logging and file IO constants
 logging.getLogger("requests").setLevel(logging.WARNING)
 logger = logging.getLogger("scrape")
@@ -43,7 +43,7 @@ logging.configure()
 #   Main routine                #
 # ----------------------------- #
 
-def main(decksrc='scg', neo4juri=common.NEO4J_URI, credyaml=F_CRED):
+def main(decksrc='scg', neo4juri=NEO4J_URI, credyaml=F_CRED):
     """do ery ol thang
 
     args:
@@ -67,8 +67,7 @@ def main(decksrc='scg', neo4juri=common.NEO4J_URI, credyaml=F_CRED):
         scgdecks.load_decks_to_neo4j(neo4juri=neo4juri, **creds)
     else:
         raise ValueError(
-            "decksrc '{}' is not a valid deck src enumeration".format(decksrc)
-        )
+            "decksrc '{}' is not a valid deck src enumeration".format(decksrc))
 
 
 # ----------------------------- #
@@ -83,9 +82,8 @@ def parse_args():
     parser.add_argument("-d", "--decksrc", help=decksrc, default='scg')
 
     neo4juri = "uri of the neo4j database"
-    parser.add_argument(
-        "-u", "--neo4juri", help=neo4juri, default=common.NEO4J_URI
-    )
+    parser.add_argument("-u", "--neo4juri", help=neo4juri,
+                        default=common.NEO4J_URI)
 
     credyaml = "credentials holding neo4j db credentials"
     parser.add_argument('-c', "--credyaml", help=credyaml, default=F_CRED)

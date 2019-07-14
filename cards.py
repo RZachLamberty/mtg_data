@@ -75,9 +75,8 @@ def get_cards(url=CARD_URL):
 
 
 def all_land_card_names(url=CARD_URL):
-    return {
-        _.get('name') for _ in get_cards(url) if 'Land' in _.get('types', [])
-    }
+    return {_.get('name')
+            for _ in get_cards(url) if 'Land' in _.get('types', [])}
 
 
 def all_card_names(url=CARD_URL, ignore_lands=True):
