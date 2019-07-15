@@ -12,6 +12,7 @@ Description:
 Usage:
     import metamox
 
+
 """
 
 import logging as _logging
@@ -23,6 +24,7 @@ import pandas as _pd
 import requests as _requests
 
 from mtg.colors import MTG_COLORS as _MTG_COLORS
+from mtg.utils import file_cache
 
 # ----------------------------- #
 #   Module Constants            #
@@ -59,28 +61,23 @@ def get_tag_list():
 
 
 @lru_cache(None)
-def get_tag(tag_url, tag_name):
+def get_tag(tag_url, tag_name, get_colors=False, get_legality=False):
+    _LOGGER.debug('getting tag "{}" from {}'.format(tag_name, tag_url))
     resp = _requests.get(url='http://www.metamox.com/{}/'.format(tag_url),
                          cookies={'search-view': 'list'})
     root = _html.fromstring(resp.text)
     card_rows = root.xpath('.//a[contains(@class, "cardable")]')
     cards = []
     for card_row in card_rows:
+        color_identity = {}
+        format_legality = {}
         row_classes = set(card_row.classes)
-        color_identity = {color: color in row_classes for color in COLORS}
-        format_legality = {fmt: fmt in row_classes for fmt in FORMATS}
+        if get_colors:
+            color_identity = {color: color in row_classes for color in COLORS}
+        if get_legality:
+            format_legality = {fmt: fmt in row_classes for fmt in FORMATS}
+
         name = card_row.find('div/div').text.strip()
-        _LOGGER.debug('parsing card {}'.format(name))
-        try:
-            price_rarity = card_row.find('div/div/div').text.strip()
-            price, rarity = (_re.match(r'\$([\d\.]+) \(([\w]+)\)',
-                                       price_rarity)
-                             .groups())
-            price = float(price)
-            rarity = rarity
-        except:
-            price = None
-            rarity = None
 
         try:
             subtag_xp = './ancestor::div[1]/preceding-sibling::div//h3/text()'
@@ -89,26 +86,36 @@ def get_tag(tag_url, tag_name):
             subtag = None
 
         cards.append({'name': name,
-                      'rarity': rarity,
-                      'price': price,
                       'tag': tag_name,
                       'subtag': subtag,
                       **color_identity,
                       **format_legality, })
 
-    keep_cols = ['name', 'price', 'rarity', 'tag', 'subtag'] + COLORS + FORMATS
-    cards = _pd.DataFrame(cards)[keep_cols]
-    cards.colorless = ~cards[COLORS].any(axis=1)
+    keep_cols = ['name', 'tag', 'subtag']
+    if get_colors:
+        keep_cols += COLORS
+    if get_legality:
+        keep_cols += FORMATS
+
+    if cards:
+        cards = _pd.DataFrame(cards)[keep_cols]
+    else:
+        cards = _pd.DataFrame(columns=keep_cols)
+
+    if get_colors:
+        cards.colorless = ~cards[COLORS].any(axis=1)
 
     return cards
 
 
+@file_cache('metamox_tags.pkl')
 def get_all_tags(tag_list=None):
     tag_list = tag_list or get_tag_list()
     df = _pd.DataFrame()
     for tag in tag_list:
-        _LOGGER.debug(tag)
-        df = df.append(get_tag(tag), ignore_index=True)
+        tag_url = tag[0]
+        tag_name = tag[1]
+        df = df.append(get_tag(tag_url, tag_name), ignore_index=True)
 
     return df.reset_index()
 
