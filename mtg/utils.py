@@ -15,10 +15,17 @@ Usage:
 """
 
 import logging
+import logging.config
 import os
+import pickle
 
 import lxml.html
 import requests
+import yaml
+
+from functools import wraps
+
+from mtg.config import F_LOGGING_CONFIG
 
 
 # ----------------------------- #
@@ -27,6 +34,7 @@ import requests
 
 # local html caching
 HTML_DIR = os.path.join(os.sep, 'var', 'data', 'local_html_cache')
+CACHE_DIR = os.path.join(os.sep, 'var', 'data', 'mtg_cache')
 
 LOGGER = logging.getLogger(__name__)
 
@@ -70,3 +78,24 @@ def url2html(url, localdir=HTML_DIR, forcerefresh=False, hidden=True,
     else:
         with open(localname, 'rb') as fp:
             return lxml.html.fromstring(fp.read())
+
+
+def init_logging():
+    with open(F_LOGGING_CONFIG, 'rb') as fp:
+        logging.config.dictConfig(yaml.load(fp, yaml.FullLoader))
+
+
+def file_cache(f, cache_dir=CACHE_DIR):
+    os.makedirs(cache_dir, exist_ok=True)
+    f_full = os.path.join(cache_dir, f)
+    def file_cache_decorator(func):
+        @wraps(func)
+        def new_func(*args, force_refresh=False, **kwargs):
+            if force_refresh or not os.path.isfile(f_full):
+                x = func(*args, **kwargs)
+                with open(f_full, 'wb') as fp:
+                    pickle.dump(x, fp)
+            with open(f_full, 'rb') as fp:
+                return pickle.load(fp)
+        return new_func
+    return file_cache_decorator
