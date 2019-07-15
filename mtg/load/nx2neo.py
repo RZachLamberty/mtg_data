@@ -45,7 +45,8 @@ class MtgNeo4jError(Exception):
 
 
 def verify_constraints(session, constraints=None):
-    constraints = constraints or MTG_CONSTRAINTS
+    if constraints is None:
+        constraints = MTG_CONSTRAINTS
 
     for (label, prop) in constraints:
         session.run(

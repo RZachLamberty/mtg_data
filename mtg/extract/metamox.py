@@ -218,3 +218,6 @@ def add_my_tags(df):
     ] = 'mtg:devotion_matters'
 
     return mmtags
+
+# todo: clean up storm (and probably other keyword) tags where the presence
+#  of the word in the name of a card is sufficient for tagging
