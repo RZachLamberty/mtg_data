@@ -14,40 +14,24 @@ Usage:
 
 """
 
-import locale
-import logging
-import re
+import logging as _logging
+import re as _re
+from functools import lru_cache
 
-import lxml.html
-import pandas as pd
-import requests
+import lxml.html as _html
+import pandas as _pd
+import requests as _requests
 
-from mtg.colors import MTG_COLORS
+from mtg.colors import MTG_COLORS as _MTG_COLORS
 
 # ----------------------------- #
 #   Module Constants            #
 # ----------------------------- #
 
-# just setting price defaults, could have hardcoded, '$', probably should have..
-locale.setlocale(locale.LC_ALL, 'en_US.UTF8')
+_LOGGER = _logging.getLogger(__name__)
+_LOGGER.setLevel(_logging.DEBUG)
 
-LOGGER = logging.getLogger(__name__)
-LOGGER.setLevel(logging.DEBUG)
-
-TAG_LIST = ['board-wipes',
-            'copy',
-            'counters',
-            'devotion',
-            'extras',
-            'hate',
-            'lands',
-            'mana-rocks',
-            'mass-haste',
-            'reanimate',
-            'removal',
-            'theft',
-            'tutors', ]
-COLORS = [_.fullname for _ in MTG_COLORS]
+COLORS = [_.fullname for _ in _MTG_COLORS]
 FORMATS = ['commander', 'legacy', 'modern', 'standard', ]
 
 
@@ -55,54 +39,75 @@ FORMATS = ['commander', 'legacy', 'modern', 'standard', ]
 #   Main routine                #
 # ----------------------------- #
 
-def _parse_price(px):
+def _parse_price(px, currency_symbol='$'):
     """stolen from here: https://stackoverflow.com/questions/8421922/"""
     try:
-        return locale.atof(px.strip(locale.localeconv()['currency_symbol']))
+        return float(px.strip(currency_symbol))
     except ValueError:
         return None
 
 
-def get_tag(tag):
-    resp = requests.get(url='http://www.metamox.com/tag/{}/'.format(tag),
-                        cookies={'search-view': 'list'})
-    root = lxml.html.fromstring(resp.text)
-    card_rows = root.xpath('.//tr[contains(@class, "card ")]')
+@lru_cache(None)
+def get_tag_list():
+    """hit up http://www.metamox.com/tag/ to generate a list of tags"""
+    resp = _requests.get(url='http://www.metamox.com/tag/')
+    root = _html.fromstring(resp.text)
+    cat_xp = './/div[@class="card-block"]//div[@class="column-cell"]/a'
+
+    # we only need top-level tags; the sub-levels appear on the pages themselves
+    return [[cat_a.attrib['href'], cat_a.text] for cat_a in root.xpath(cat_xp)]
+
+
+@lru_cache(None)
+def get_tag(tag_url, tag_name):
+    resp = _requests.get(url='http://www.metamox.com/{}/'.format(tag_url),
+                         cookies={'search-view': 'list'})
+    root = _html.fromstring(resp.text)
+    card_rows = root.xpath('.//a[contains(@class, "cardable")]')
     cards = []
     for card_row in card_rows:
         row_classes = set(card_row.classes)
         color_identity = {color: color in row_classes for color in COLORS}
         format_legality = {fmt: fmt in row_classes for fmt in FORMATS}
-        name = card_row.find('./td/a').text
-        LOGGER.debug('parsing card {}'.format(name))
-        rarity = card_row.xpath('.//*[contains(@class, "hidden-sm")]')[0].text
-        price = _parse_price(card_row.find('./td/span').text)
+        name = card_row.find('div/div').text.strip()
+        _LOGGER.debug('parsing card {}'.format(name))
         try:
-            subtag_xp = './ancestor::table/preceding-sibling::h2[1]'
+            price_rarity = card_row.find('div/div/div').text.strip()
+            price, rarity = (_re.match(r'\$([\d\.]+) \(([\w]+)\)',
+                                       price_rarity)
+                             .groups())
+            price = float(price)
+            rarity = rarity
+        except:
+            price = None
+            rarity = None
+
+        try:
+            subtag_xp = './ancestor::div[1]/preceding-sibling::div//h3/text()'
             subtag = (card_row.xpath(subtag_xp)[0])
-            subtag = subtag.text
         except IndexError:
             subtag = None
+
         cards.append({'name': name,
                       'rarity': rarity,
                       'price': price,
-                      'tag': tag,
+                      'tag': tag_name,
                       'subtag': subtag,
                       **color_identity,
                       **format_legality, })
 
     keep_cols = ['name', 'price', 'rarity', 'tag', 'subtag'] + COLORS + FORMATS
-    cards = pd.DataFrame(cards)[keep_cols]
+    cards = _pd.DataFrame(cards)[keep_cols]
     cards.colorless = ~cards[COLORS].any(axis=1)
 
     return cards
 
 
 def get_all_tags(tag_list=None):
-    tag_list = tag_list or TAG_LIST
-    df = pd.DataFrame()
+    tag_list = tag_list or get_tag_list()
+    df = _pd.DataFrame()
     for tag in tag_list:
-        LOGGER.debug(tag)
+        _LOGGER.debug(tag)
         df = df.append(get_tag(tag), ignore_index=True)
 
     return df.reset_index()
@@ -167,22 +172,22 @@ def add_my_tags(df):
 
         try:
             return 'mtg:counter:then:{}'.format(
-                re.findall(r'.* \+ ([\w\s]+)', subtag)[0])
+                _re.findall(r'.* \+ ([\w\s]+)', subtag)[0])
         except IndexError:
             pass
 
         try:
-            target = re.findall(r'counter ([\w\s]+)', subtag)[0]
-            target = re.sub('ies$', 'y', target)
-            target = re.sub('s$', '', target)
-            target = re.sub(' ', '_', target)
+            target = _re.findall(r'counter ([\w\s]+)', subtag)[0]
+            target = _re.sub('ies$', 'y', target)
+            target = _re.sub('s$', '', target)
+            target = _re.sub(' ', '_', target)
             return 'mtg:counter:target:{}'.format(target)
         except IndexError:
             pass
 
         try:
-            modifier = re.findall(r'([\w\s]+) counter$', subtag)[0]
-            modifier = re.sub(' ', '_', modifier)
+            modifier = _re.findall(r'([\w\s]+) counter$', subtag)[0]
+            modifier = _re.sub(' ', '_', modifier)
             return 'mtg:counter:{}'.format(modifier)
         except IndexError:
             pass
