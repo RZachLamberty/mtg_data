@@ -26,8 +26,15 @@ from mtg import cards
 
 _LOGGER = _logging.getLogger(__name__)
 _LOGGER.setLevel(_logging.INFO)
-_CARD_UNIVERSE = {'no_lands': cards.all_card_names(ignore_lands=True),
-                  'w_lands': cards.all_card_names(ignore_lands=False), }
+_CARD_UNIVERSE = None
+
+
+def get_card_universe(k):
+    global _CARD_UNIVERSE
+    if _CARD_UNIVERSE is None:
+        _CARD_UNIVERSE = {'no_lands': cards.all_card_names(ignore_lands=True),
+                          'w_lands': cards.all_card_names(ignore_lands=False), }
+    return _CARD_UNIVERSE[k]
 
 
 # ----------------------------- #
@@ -47,6 +54,7 @@ class Deck(object):
     cards in a deck of arbitrary size and shape
 
     """
+
     def __init__(self, cardnames=None, name=None, card_universe=None,
                  ignore_lands=True):
         """initialize the deck
@@ -79,7 +87,7 @@ class Deck(object):
         # reasonable default values
         self.cardnames = set(cardnames or set())
         self.name = name or ''
-        self.card_universe = card_universe or _CARD_UNIVERSE['w_lands']
+        self.card_universe = card_universe or get_card_universe('w_lands')
         self.ignore_lands = ignore_lands
 
         # collect all general purpose cleanup and prep work in one function
@@ -98,7 +106,7 @@ class Deck(object):
 
         # TODO: left off here
         nonland_cardnames = self.cardnames.intersection(
-            _CARD_UNIVERSE['no_lands'])
+            get_card_universe('no_lands'))
         self.cardnames = _np.array(list(self.cardnames))
         self.nonland_cardnames = _np.array(list(nonland_cardnames))
 
@@ -106,7 +114,7 @@ class Deck(object):
             compliment_cardnames = set(self.card_universe).difference(
                 self.cardnames)
             nonland_compliment_cardnames = compliment_cardnames.intersection(
-                _CARD_UNIVERSE['no_lands'])
+                get_card_universe('no_lands'))
             self.compliment_cardnames = _np.array(list(compliment_cardnames))
             self.nonland_compliment_cardnames = _np.array(
                 list(nonland_compliment_cardnames))
