@@ -37,7 +37,7 @@ from mtg import cards, decks, tags
 _LOGGER = _logging.getLogger(__name__)
 _LOGGER.setLevel(_logging.DEBUG)
 
-_URL = 'http://tappedout.net/api/inventory/{owner:}/board/'
+_INVENTORY_URL = 'http://tappedout.net/api/inventory/{owner:}/board/'
 _FIELDNAMES = ['Name', 'Edition', 'Qty', 'Foil', ]
 _FNAME = _os.path.join(_os.sep, 'tmp', 'mtg_inventory.csv')
 
@@ -50,7 +50,7 @@ class TappedOutError(Exception):
 #   generic functions           #
 # ----------------------------- #
 
-def get_inventory(url=_URL, owner='ndlambo', pagelength=500):
+def get_inventory(url=_INVENTORY_URL, owner='ndlambo', pagelength=500):
     """simple inventory json getter"""
     inventory = []
     params = {'length': pagelength, 'start': 0, }
@@ -102,13 +102,36 @@ def get_inventory(url=_URL, owner='ndlambo', pagelength=500):
     return inventory
 
 
-def df_inventory(url=_URL, owner='ndlambo', pagelength=500):
+def df_inventory(url=_INVENTORY_URL, owner='ndlambo', pagelength=500):
     return _pd.DataFrame(get_inventory(url, owner, pagelength))
 
 
 # ----------------------------- #
 # deck-specific information     #
 # ----------------------------- #
+
+def _get_deck_ids(owner='ndlambo'):
+    ids = []
+    page = 1
+
+    while True:
+        _LOGGER.debug('loading deck ids, page {}'.format(page))
+
+        resp = _requests.get(
+            'https://tappedout.net/users/{}/mtg-decks/'.format(owner),
+            params={'page': page})
+
+        if resp.status_code == 404:
+            break
+
+        root = _html.fromstring(resp.text)
+        ids += [_.attrib['href'].replace('/mtg-decks/', '').replace('/', '')
+                for _ in root.xpath('.//h3[contains(@class, "name")]/a')]
+
+        page += 1
+
+    return ids
+
 
 def _get_deck_df(deckid):
     deckurl = 'http://tappedout.net/mtg-decks/{}/?fmt=csv'.format(deckid)
@@ -173,16 +196,17 @@ class TappedoutDeck(decks.Deck):
 # tags                          #
 # ----------------------------- #
 
-def get_categories(deckid):
+def get_categories(deck_id):
     """given a tappedout deck id, get all tagged custom categories for that deck
 
     "categories" is the TO name for what we internally call a tag
 
     args:
-        deckid (str): tappedout.net deck id
+        deck_id (str): tappedout.net deck id
 
     """
-    resp = _requests.get('http://tappedout.net/mtg-decks/{}/'.format(deckid),
+    _LOGGER.debug('loading categories for deck {}'.format(deck_id))
+    resp = _requests.get('http://tappedout.net/mtg-decks/{}/'.format(deck_id),
                          params={'cat': 'custom'})
     root = _html.fromstring(resp.text)
     mbc_xp = './/div[contains(@class, "board-container")]'
@@ -206,6 +230,11 @@ def get_categories(deckid):
             categories[cardname].append(category)
 
     return categories
+
+
+def get_all_categories(owner='ndlambo'):
+    return {deck_id: dict(get_categories(deck_id))
+            for deck_id in _get_deck_ids(owner)}
 
 
 def tappedout_categories_to_tags(deckid, categories):
@@ -282,7 +311,8 @@ def tappedout_categories_to_tags(deckid, categories):
 # binder-specific information   #
 # ----------------------------- #
 
-def binder_summary(url=_URL, owner='ndlambo', bulkthresh=0.30, mainthresh=1.00):
+def binder_summary(url=_INVENTORY_URL, owner='ndlambo', bulkthresh=0.30,
+                   mainthresh=1.00):
     """break things down as if they're in a binder"""
     keepkeys = ['name', 'qty', 'foil', 'px', 'tla', 'type', 'tcg-foil-price',
                 'colorIdentity', 'power', 'toughness', 'cmc', 'set']
@@ -448,7 +478,7 @@ def binder_df_to_pagelists(inventory):
 #   cli                         #
 # ----------------------------- #
 
-def main(url=_URL, owner='ndlambo', fname=_FNAME):
+def main(url=_INVENTORY_URL, owner='ndlambo', fname=_FNAME):
     """main function"""
     inventory = df_inventory(url, owner)
     inventory.name = inventory.name.str.replace('/', '//')
