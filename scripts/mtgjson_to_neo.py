@@ -24,7 +24,7 @@ from neo4j import GraphDatabase, basic_auth
 
 from mtg.cards import CARD_URL
 from mtg.credentials import F_NEO_CONF, load_neo_config
-from mtg.load.nx2neo import verify_constraints
+from mtg.load.neo import verify_constraints
 from mtg.utils import init_logging
 
 # ----------------------------- #

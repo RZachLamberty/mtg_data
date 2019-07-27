@@ -19,7 +19,7 @@ import networkx as nx
 
 from mtg.credentials import F_NEO_CONF, load_neo_config
 from mtg.extract import metamox
-from mtg.load.nx2neo import digraph_to_neo
+from mtg.load.neo import digraph_to_neo
 from mtg.utils import init_logging
 
 

@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """
-Module: nx2neo.py
+Module: neo.py
 Author: zlamberty
 Created: 2018-06-23
 

@@ -29,7 +29,7 @@ from neo4j import basic_auth, GraphDatabase
 
 from mtg.credentials import F_NEO_CONF, load_neo_config
 from mtg.extract.tappedout import get_all_categories
-from mtg.load.nx2neo import digraph_to_neo, verify_constraints
+from mtg.load.neo import digraph_to_neo, verify_constraints
 from mtg.utils import init_logging
 
 # ----------------------------- #
