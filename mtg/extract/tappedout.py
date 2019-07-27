@@ -26,6 +26,7 @@ import networkx as _nx
 import pandas as _pd
 import requests as _requests
 
+from functools import lru_cache as _lru_cache
 from json.decoder import JSONDecodeError as _JSONDecodeError
 
 from mtg import cards, decks, tags
@@ -50,6 +51,7 @@ class TappedOutError(Exception):
 #   generic functions           #
 # ----------------------------- #
 
+@_lru_cache(None)
 def get_inventory(url=_INVENTORY_URL, owner='ndlambo', pagelength=500):
     """simple inventory json getter"""
     inventory = []
@@ -102,6 +104,7 @@ def get_inventory(url=_INVENTORY_URL, owner='ndlambo', pagelength=500):
     return inventory
 
 
+@_lru_cache(None)
 def df_inventory(url=_INVENTORY_URL, owner='ndlambo', pagelength=500):
     return _pd.DataFrame(get_inventory(url, owner, pagelength))
 
@@ -110,6 +113,7 @@ def df_inventory(url=_INVENTORY_URL, owner='ndlambo', pagelength=500):
 # deck-specific information     #
 # ----------------------------- #
 
+@_lru_cache(None)
 def _get_deck_ids(owner='ndlambo'):
     ids = []
     page = 1
@@ -133,11 +137,21 @@ def _get_deck_ids(owner='ndlambo'):
     return ids
 
 
-def _get_deck_df(deckid):
-    deckurl = 'http://tappedout.net/mtg-decks/{}/?fmt=csv'.format(deckid)
+@_lru_cache(None)
+def _get_deck_df(deck_id):
+    deckurl = 'http://tappedout.net/mtg-decks/{}/?fmt=csv'.format(deck_id)
     try:
         df = _pd.read_csv(deckurl)
         df.columns = [_.lower() for _ in df.columns]
+        # if we entered a card more than once in the editor, it will appear as
+        # separate lines. in those instances, let's collapse them
+        cols = df.columns
+        df = (df
+            .groupby('name')
+            .agg({c: ('sum' if c == 'qty' else 'first')
+                  for c in cols if c != 'name'})
+            .reset_index()
+        [cols])
         return df
     except _pd.io.common.HTTPException:
         raise ValueError("receive http exception -- check that deck is public")
@@ -153,15 +167,15 @@ class TappedoutDeck(decks.Deck):
 
     """
 
-    def __init__(self, deckid, keep_data=True, card_universe=None,
-                 ignore_lands=True):
-        """build a deck object off of `deckid` on TO
+    def __init__(self, deck_id, keep_data=True, card_universe=None,
+                 ignore_lands=True, with_tags=False):
+        """build a deck object off of `deck_id` on TO
 
         args:
-            deckid (str): the id we go and fetch from the TO site (will also be
+            deck_id (str): the id we go and fetch from the TO site (will also be
                 the name of the deck object)
             keep_data (bool): whether or not to keep the dataframe we obtain
-                from tappedout for `deckid` as an attribute `self.df`
+                from tappedout for `deck_id` as an attribute `self.df`
                 (default: True)
             card_universe (iterable): a list of the card names available in the
                 entire game universe (also will be converted to a distinct set).
@@ -169,6 +183,8 @@ class TappedoutDeck(decks.Deck):
                 `ignore_lands`)
             ignore_lands (bool): whether or not we should ignore lands in all of
                 our various collections of cards (default: True)
+            with_tags (bool): whether or not we should load the category tags we
+                have entered in TO (default: False)
 
         returns:
             TappedoutDeck: an initialized deck object
@@ -177,25 +193,73 @@ class TappedoutDeck(decks.Deck):
             DeckError
 
         """
-        self.deckid = deckid
+        self.deck_id = deck_id
+        self.ignore_lands = ignore_lands
+        self.with_tags = with_tags
+
         if keep_data:
-            self.df = _get_deck_df(self.deckid)
+            self.df = _get_deck_df(self.deck_id)
 
         cardnames = set(self.df.name.tolist())
 
-        if ignore_lands:
+        if self.ignore_lands:
             cardnames = cardnames.difference(cards.all_land_card_names())
 
+        if self.with_tags:
+            self.df = self.df.merge(self.deck_tags,
+                                    how='left',
+                                    on=['name'])
+
         super().__init__(cardnames=cardnames,
-                         name=self.deckid,
+                         name=self.deck_id,
                          card_universe=card_universe,
                          ignore_lands=ignore_lands, )
+
+    @property
+    def deck_tags(self):
+        try:
+            return self._deck_tags
+        except AttributeError:
+            self._deck_tags = _pd.DataFrame(
+                get_categories(self.deck_id).items(),
+                columns=['name', 'tag_list'])
+            return self._deck_tags
+
+    @property
+    def text_description(self):
+        """the text block you could use to create this deck by copy-pasta"""
+        # the basic form of a single line is
+        #   {qty}x {name}[ ({set_code})][ {tag_list}]
+        # where the items in brackets are optional and depend on the column
+        # existing
+        qty = self.df.qty.astype('str')
+        name = self.df.name
+
+        set_code = self.df.printing.apply(lambda sc: (''
+                                                      if _np.isnan(sc)
+                                                      else ' ({})'.format(sc)))
+
+        def make_tag_list_str(tl):
+            try:
+                return ' '.join(tl)
+            except TypeError:
+                return ''
+
+        tag_list = self.df.tag_list.apply(make_tag_list_str)
+
+        return '\n'.join((self.df.qty.astype('str')
+                          + 'x '
+                          + self.df.name
+                          + ' '
+                          + set_code
+                          + tag_list).values)
 
 
 # ----------------------------- #
 # tags                          #
 # ----------------------------- #
 
+@_lru_cache(None)
 def get_categories(deck_id):
     """given a tappedout deck id, get all tagged custom categories for that deck
 
@@ -232,9 +296,67 @@ def get_categories(deck_id):
     return categories
 
 
+@_lru_cache(None)
 def get_all_categories(owner='ndlambo'):
     return {deck_id: dict(get_categories(deck_id))
             for deck_id in _get_deck_ids(owner)}
+
+
+TAPPEDOUT_TAGS_TO_REPLACE = {'enbaler': 'stopgap',
+                             'enabler': 'stopgap',
+                             'enhancer': 'amplify',
+                             'win': 'wincon',
+                             'winning': 'wincon', }
+TAPPEDOUT_SPECIAL_TAGS = ['amplify',
+                          'engine',
+                          'standalone',
+                          'stopgap',
+                          'wincon']
+
+
+def build_categories_df(categories, aliases=None):
+    """given a categories dictionary such as get_all_categories returns
+    above, build a dataframe view with some helpful extra pieces
+
+    """
+    if aliases is None:
+        aliases = {}
+    aliases_df = _pd.DataFrame(aliases.items(),
+                               columns=['tappedout_tag', 'tag'])
+
+    tappedout_tag_df = _pd.DataFrame([{'deck_id': deck_id,
+                                       'card': card,
+                                       'tappedout_tag_raw': tappedout_tag}
+                                      for (deck_id, card_dict) in
+                                      categories.items()
+                                      for card, taglist in card_dict.items()
+                                      for tappedout_tag in taglist])
+
+    tappedout_tag_df.loc[:, 'tappedout_tag'] = (tappedout_tag_df
+                                                .tappedout_tag_raw
+                                                .str.replace('#', '')
+                                                .str.replace('_', ' '))
+
+    to_replace = {'tappedout_tag': TAPPEDOUT_TAGS_TO_REPLACE}
+    tappedout_tag_df = (tappedout_tag_df
+                        # just fix a typo and remap terms I've had two names for
+                        .replace(to_replace=to_replace)
+                        .merge(aliases_df, how='left', on='tappedout_tag'))
+
+    # replace the tags with the deck-specific ones in some instances
+    tappedout_tag_df.loc[:, 'is_special'] = (tappedout_tag_df
+                                             .tappedout_tag
+                                             .isin(TAPPEDOUT_SPECIAL_TAGS))
+    tappedout_tag_df.tag = (tappedout_tag_df
+                            .tag
+                            .where(~tappedout_tag_df.is_special,
+                                   (tappedout_tag_df.deck_id
+                                    + ' - '
+                                    + (tappedout_tag_df
+                                       .tappedout_tag
+                                       .str.capitalize()))))
+
+    return tappedout_tag_df
 
 
 def tappedout_categories_to_tags(deckid, categories):
@@ -267,7 +389,8 @@ def tappedout_categories_to_tags(deckid, categories):
     catgraph.add_node(deckid, label='Deck', is_tappedout=True)
 
     # the tappedout categories of amplify, standalone, and stopgap only have
-    # meaning in the context of the given deckid. we chose to represent these as
+    # meaning in the context of the given deck_id. we chose to represent
+    # these as
     # subcategories of the broader category "amplify" (etc) named for their
     # decks (similar to how goblin tribal cards are "tribal:goblin")
     for deckcat in ['amplify', 'standalone', 'stopgap']:
