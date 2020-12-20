@@ -1,8 +1,10 @@
 lxml
+matplotlib
 neo4j
 networkx
 numpy
 pandas
 pyyaml
 requests
+scipy
 tqdm

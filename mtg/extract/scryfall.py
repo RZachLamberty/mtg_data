@@ -15,6 +15,8 @@ Usage:
     >>> import mtg.extract.scryfall
 
 """
+import json
+import os
 
 import requests
 
@@ -25,6 +27,7 @@ from lxml import html
 #   Module Constants            #
 # ----------------------------- #
 
+HERE = os.path.realpath(os.path.dirname(__file__))
 ENDPOINT = 'https://api.scryfall.com'
 TAG_ENDPOINT = 'https://tagger.scryfall.com/card/{set:}/{collector_number:}'
 
@@ -41,3 +44,17 @@ def get_card_tags(set, collector_number, tag_endpoint=TAG_ENDPOINT):
     return [href.split('/')[-1]
             for href in tag_hrefs
             if href.startswith('/tag/card')]
+
+
+def get_cards():
+    bulk_file = os.path.join(HERE, 'scryfall-default-cards.json')
+    try:
+        with open(bulk_file, 'rb') as fp:
+            return json.load(fp)
+    except:
+        resp = requests.get(
+            url='https://archive.scryfall.com/json/scryfall-default-cards.json')
+        with open(bulk_file, 'wb') as fp:
+            fp.write(resp.content)
+        with open(bulk_file, 'rb') as fp:
+            return json.load(fp)

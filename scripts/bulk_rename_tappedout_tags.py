@@ -29,7 +29,7 @@ from neo4j import basic_auth, GraphDatabase
 
 from mtg.credentials import F_NEO_CONF, load_neo_config
 from mtg.extract.tappedout import get_all_categories
-from mtg.load.neo import digraph_to_neo, verify_constraints
+from mtg.load.neo import digraph_to_neo, verify_constraints, NeoConstraint
 from mtg.utils import init_logging
 
 # ----------------------------- #
@@ -82,7 +82,7 @@ def main(f_neo_conf=F_NEO_CONF, tapped_out_owner='ndlambo'):
     nx_new_tags, nx_card_tags = build_tag_graphs(tappedout_tags, tag_remapping)
 
     # push graphs to neo4j
-    constraints = [('Tag', 'name'), ]
+    constraints = [NeoConstraint('Tag', 'name')]
     digraph_to_neo(nx_new_tags, neo_conf, constraints)
     digraph_to_neo(nx_card_tags, neo_conf, constraints)
 

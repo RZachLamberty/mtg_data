@@ -42,6 +42,27 @@ _INVENTORY_URL = 'http://tappedout.net/api/inventory/{owner:}/board/'
 _FIELDNAMES = ['Name', 'Edition', 'Qty', 'Foil', ]
 _FNAME = _os.path.join(_os.sep, 'tmp', 'mtg_inventory.csv')
 
+# to handle stupid casing and special characters
+_CARD_ALIASES = {'Open Into Wonder': 'Open into Wonder',
+                 "Lim-Dul's Vault": "Lim-Dûl's Vault"}
+
+_CURRENT_DECK_URLS = {'/mtg-decks/06-06-18-esper-blink/',
+                      '/mtg-decks/12-07-19-jeskai-edh/',
+                      '/mtg-decks/13-02-16-mizzix-of-the-izmagnus-edh/',
+                      '/mtg-decks/19-02-17-AGL-breya-edh/',
+                      '/mtg-decks/23-03-17-gobrins/',
+                      '/mtg-decks/doubling-season-edh/',
+                      '/mtg-decks/havoc-festival-edh/',
+                      '/mtg-decks/19-09-19-grixis-rogues/',
+                      '/mtg-decks/zadaaaaaahhhhhhh-copy/',
+                      '/mtg-decks/sprite-draw/',
+                      # EDH   ^^^^
+                      # other vvvv
+                      '/mtg-decks/modern-delve-4/',
+                      '/mtg-decks/mtggoldfish-restore-balance/',
+                      '/mtg-decks/mtggoldfish-uw-tempered-steel/',
+                      '/mtg-decks/08-06-17-fevered-thing-tutelage/', }
+
 
 class TappedOutError(Exception):
     pass
@@ -77,8 +98,15 @@ def get_inventory(url=_INVENTORY_URL, owner='ndlambo', pagelength=500):
 
     # we get a bit of extra information from the mtgjson site we'd like to join
     # in (specifically, cmc and color identity), so pivot that out into a more
-    # useful lookup dict
-    mtgjson = {(card.get('name'), card.get('setname')): card
+    # useful lookup dict. include a hand-maintained mapping from mtgjson set
+    # names to those supported in tappedout
+    setname_remapping = {'CMA': 'CM1'}
+
+    def parse_set_name(card):
+        setname = card.get('setname')
+        return setname_remapping.get(setname, setname)
+
+    mtgjson = {(card.get('name', '').lower(), parse_set_name(card)): card
                for card in cards.get_cards()}
 
     # do some parsing of the html elements returned (because we can't just get
@@ -90,15 +118,59 @@ def get_inventory(url=_INVENTORY_URL, owner='ndlambo', pagelength=500):
                        for (k, v) in carddetails.items()
                        if k.startswith('data-')})
         record.update(record['edit'])
-        price = _html.fromstring(record['market_price']).text_content()
+
+        # merging with mtgjson requires fixing the setname and the card name
+        setname = record['set']
+        if setname == '000':
+            for (_, sn) in record['all_printings']:
+                if sn != setname:
+                    setname = sn
+                    break
+
+        orig_name = record['name']
+        cardname = orig_name.lower()
+
+        # merge in stuff from the mtgjson api
+        if ' / ' in cardname:
+            # handle fusion cards, which are lame and suck. take the bulk of the
+            # info from the first of the two cards, but get color identity from
+            # the second
+            left_half, right_half = cardname.split(' / ')
+            record.update(mtgjson.get((left_half, setname), {}))
+            other_ci = mtgjson.get((right_half, setname), {})['colorIdentity']
+            record['colorIdentity'] += other_ci
+            # make unique
+            record['colorIdentity'] = list(set(record['colorIdentity']))
+
+            # undo the overwrite of the cardname which is stupid af
+            record['name'] = orig_name
+        else:
+            record.update(mtgjson.get((cardname, setname), {}))
+
+        is_foil = record['foil'] is not None
+        try:
+            tcg_px_key = f"tcg{'-foil' if is_foil else ''}-price"
+            price = float(record[tcg_px_key])
+        except:
+            try:
+                reg_px_key = 'paperFoil' if is_foil else 'paper'
+                px_dict = record['prices'][reg_px_key]
+                most_recent_date = max(px_dict.keys())
+                price = float(px_dict[most_recent_date])
+            except:
+                _LOGGER.debug(f"no price info found for {record['name']}")
+                pass
+
         try:
             record['px'] = float(price)
         except:
             record['px'] = None
 
         try:
-            record.update(mtgjson[record['name'], record['set']])
-        except:
+            record['in_collections'] = {_['url'] for _ in
+                                        record['other_collections'][
+                                            'collections']}
+        except KeyError:
             pass
 
     return inventory
@@ -147,11 +219,14 @@ def _get_deck_df(deck_id):
         # separate lines. in those instances, let's collapse them
         cols = df.columns
         df = (df
-            .groupby('name')
-            .agg({c: ('sum' if c == 'qty' else 'first')
-                  for c in cols if c != 'name'})
-            .reset_index()
-        [cols])
+              .groupby('name')
+              .agg({c: ('sum' if c == 'qty' else 'first')
+                    for c in cols if c != 'name'})
+              .reset_index())[cols]
+
+        # alias some names to play nice with mtgjson
+        df.replace({'name': _CARD_ALIASES}, inplace=True)
+
         return df
     except _pd.io.common.HTTPException:
         raise ValueError("receive http exception -- check that deck is public")
@@ -438,8 +513,31 @@ def binder_summary(url=_INVENTORY_URL, owner='ndlambo', bulkthresh=0.30,
                    mainthresh=1.00):
     """break things down as if they're in a binder"""
     keepkeys = ['name', 'qty', 'foil', 'px', 'tla', 'type', 'tcg-foil-price',
-                'colorIdentity', 'power', 'toughness', 'cmc', 'set']
+                'colorIdentity', 'power', 'toughness', 'convertedManaCost',
+                'set', 'in_collections', 'other_collections']
     inventory = _pd.DataFrame(get_inventory(url, owner))[keepkeys]
+
+    # some collections are fixed and off limits -- if a card is in one,
+    # we won't binder it. calculate the number of copies of a given card that
+    # are reserved for current decks
+    def num_unclaimed(rec):
+        try:
+            num_claimed = sum(_['qty']
+                              for _ in
+                              rec.other_collections['collections']
+                              if _['url'] in _CURRENT_DECK_URLS)
+            return max(0, rec.qty - num_claimed)
+        except (AttributeError, TypeError):
+            return rec.qty
+        except Exception as e:
+            _LOGGER.error(e)
+            _LOGGER.error(f'rec = {rec}')
+            raise
+
+    inventory.loc[:, 'num_unclaimed'] = (inventory
+                                         .apply(num_unclaimed, axis=1)
+                                         .fillna(0))
+    inventory = inventory[inventory.num_unclaimed > 0]
 
     # sets are annoying; could be strings or lists. fix
     def fix_set(s):
@@ -477,15 +575,15 @@ def binder_summary(url=_INVENTORY_URL, owner='ndlambo', bulkthresh=0.30,
     # replace the "is land" notion
     inventory.loc[:, 'is_land'] = inventory.type.str.match('land', False)
 
-    # for prices, give everything the average, and then overwrite where foil
     inventory.rename(columns={'px': 'price'}, inplace=True)
-    usefoilpx = inventory.foil.notnull() & (inventory['tcg-foil-price'] != '')
-    foilpx = (inventory
-              .loc[usefoilpx, 'tcg-foil-price']
-              .str
-              .replace(',', '.')
-              .astype(float))
-    inventory.loc[usefoilpx, 'price'] = foilpx
+    # # for prices, give everything the average, and then overwrite where foil
+    # usefoilpx = inventory.foil.notnull() & (inventory['tcg-foil-price'] != '')
+    # foilpx = (inventory
+    #           .loc[usefoilpx, 'tcg-foil-price']
+    #           .str
+    #           .replace(',', '.')
+    #           .astype(float))
+    # inventory.loc[usefoilpx, 'price'] = foilpx
 
     # subset based on whether or not they meet my thresholds
     inventory.loc[:, 'card_value'] = _pd.cut(inventory.price,
@@ -581,8 +679,8 @@ def binder_summary(url=_INVENTORY_URL, owner='ndlambo', bulkthresh=0.30,
 
     # finally, sort everything
     inventory = inventory.sort_values(
-        by=['card_value', 'is_land', 'colorstr', 'mytype', 'cmc', 'power',
-            'toughness', 'name', 'foil'])
+        by=['card_value', 'is_land', 'colorstr', 'mytype', 'convertedManaCost',
+            'name', 'foil'])
 
     return inventory
 
@@ -592,7 +690,7 @@ def binder_df_to_pagelists(inventory):
     information needed for actually laying out the binder
 
     """
-    return ['{} ({}, {} of {})'.format(row['name'], row.type, i + 1, row.qty)
+    return [f"{row['name']} ({row.type}, {i + 1} of {row.qty}) - {row.price}"
             for (ind, row) in inventory.iterrows()
             for i in range(row.qty)]
 

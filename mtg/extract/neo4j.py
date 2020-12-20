@@ -37,6 +37,7 @@ RETURN n1.name AS tappedout_tag,
        n2.name AS tag"""
 
 
+# todo: clean this up so that we either return aliases beyond TO or none at all
 def get_neo_tags(neo_conf):
     neo4juri = 'bolt://{ip}:{port}'.format(**neo_conf)
     auth = _basic_auth(neo_conf['user'], neo_conf['pw'])

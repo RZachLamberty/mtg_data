@@ -28,7 +28,6 @@ _LOGGER = _logging.getLogger(__name__)
 _LOGGER.setLevel(_logging.INFO)
 _CARD_UNIVERSE = None
 
-
 def get_card_universe(k):
     global _CARD_UNIVERSE
     if _CARD_UNIVERSE is None:

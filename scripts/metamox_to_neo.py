@@ -19,7 +19,7 @@ import networkx as nx
 
 from mtg.credentials import F_NEO_CONF, load_neo_config
 from mtg.extract import metamox
-from mtg.load.neo import digraph_to_neo
+from mtg.load.neo import digraph_to_neo, NeoConstraint
 from mtg.utils import init_logging
 
 
@@ -73,7 +73,7 @@ def main(f_neo_conf=F_NEO_CONF):
     nx_tags, nx_card_tags = build_tag_graphs(metamox_tags)
 
     # push graphs to neo4j
-    constraints = [('Tag', 'name'), ]
+    constraints = [NeoConstraint('Tag', 'name')]
     digraph_to_neo(nx_tags, neo_conf, constraints)
     digraph_to_neo(nx_card_tags, neo_conf, constraints)
 

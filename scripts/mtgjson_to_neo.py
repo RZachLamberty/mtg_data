@@ -22,10 +22,15 @@ import requests
 
 from neo4j import GraphDatabase, basic_auth
 
+import os, sys
+HERE = os.path.dirname(os.path.realpath(__file__))
+sys.path.insert(0, os.path.dirname(HERE))
+
 from mtg.cards import CARD_URL
 from mtg.credentials import F_NEO_CONF, load_neo_config
-from mtg.load.neo import verify_constraints
+from mtg.load.neo import verify_constraints, NeoConstraint
 from mtg.utils import init_logging
+
 
 # ----------------------------- #
 #   Module Constants            #
@@ -89,8 +94,8 @@ def main(url=CARD_URL, f_neo_conf=F_NEO_CONF):
     neo_conf = load_neo_config(f_neo_conf)
 
     # card name and set uniqueness
-    constraints = [('Card', 'name'),
-                   ('Set', 'name')]
+    constraints = [NeoConstraint(label='Card', attribute='name'),
+                   NeoConstraint(label='Set', attribute='name')]
     neo4juri = 'bolt://{ip}:{port}'.format(**neo_conf)
     auth = basic_auth(neo_conf['user'], neo_conf['pw'])
     with GraphDatabase.driver(neo4juri, auth=auth) as driver:
@@ -102,7 +107,7 @@ def main(url=CARD_URL, f_neo_conf=F_NEO_CONF):
 
             LOGGER.info('bulk loading to neo4j')
             for (setid, setdict) in jcards.items():
-                LOGGER.debug("inserting set {}".format(setid))
+                LOGGER.info("inserting set {}".format(setid))
                 session.run(MTGJSON_INSERT_QRY, {'mtgset': setdict})
 
 

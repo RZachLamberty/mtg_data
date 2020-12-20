@@ -20,6 +20,8 @@ Usage:
 import json
 import logging
 
+from dataclasses import dataclass
+
 from neo4j import GraphDatabase, basic_auth
 
 # ----------------------------- #
@@ -44,68 +46,83 @@ class MtgNeo4jError(Exception):
     pass
 
 
+@dataclass
+class NeoNode:
+    name: str
+    label: str
+    attributes: dict = None
+
+    def neo_repr(self, alias='n'):
+        return f'({alias}:{self.label} {{name: "{self.name}"}})'
+
+    @property
+    def query(self):
+        merge_str = f'MERGE {self.neo_repr()}'
+
+        attrs = self.attributes or {}
+        set_str = ', '.join([f'n.{key} = {json.dumps(value)}'
+                             for (key, value) in attrs.items()])
+
+        on_create_str = 'ON CREATE SET {}'.format(set_str) if set_str else ''
+
+        return_str = "RETURN id(n)"
+
+        qry = ' '.join([merge_str, on_create_str, return_str])
+
+        return qry
+
+
+@dataclass
+class NeoRelationship:
+    src: NeoNode
+    dst: NeoNode
+    _type: str
+    properties: dict = None
+    directed: bool = True
+
+    def edge_repr(self, alias='e'):
+        return f'[{alias}:{self._type}]'
+
+    @property
+    def arrow(self):
+        return '>' if self.directed else ''
+
+    @property
+    def query(self):
+        merge_str = (f"MATCH {self.src.neo_repr(alias='src')} "
+                     f"MATCH {self.dst.neo_repr(alias='dst')} "
+                     f"MERGE (src)-{self.edge_repr()}-{self.arrow}(dst)")
+
+        props = self.properties or {}
+        set_str = ', '.join([f'n.{key} = {json.dumps(value)}'
+                             for (key, value) in props.items()])
+
+        on_create_str = f'ON CREATE SET {set_str}' if set_str else ''
+
+        return_str = "RETURN id(e)"
+
+        qry = ' '.join([merge_str, on_create_str, return_str])
+
+        return qry
+
+
+@dataclass
+class NeoConstraint:
+    label: str
+    attribute: str
+
+    @property
+    def query(self):
+        return (f'CREATE CONSTRAINT ON (n:{self.label})'
+                f'ASSERT n.{self.attribute} IS UNIQUE')
+
+
 def verify_constraints(session, constraints=None):
     if constraints is None:
         constraints = MTG_CONSTRAINTS
 
-    for (label, prop) in constraints:
-        session.run(
-            'CREATE CONSTRAINT ON (n:{}) ASSERT n.{} IS UNIQUE'.format(label,
-                                                                       prop))
-
-
-def make_node_qry(node_name, properties):
-    node_label = properties.get('label')
-    if node_label is None:
-        raise MtgNeo4jError("all nodes must have labels to be added to neo4j")
-
-    merge_str = 'MERGE (n:{label} {{name: "{name}"}})'.format(label=node_label,
-                                                              name=node_name, )
-
-    set_str = []
-    for (attr, val) in properties.items():
-        if attr != 'label':
-            set_str.append('n.{} = {}'.format(attr, json.dumps(val)))
-    set_str = ', '.join(set_str)
-
-    on_create_str = 'ON CREATE SET {}'.format(set_str) if set_str else ''
-
-    return_str = "return id(n)"
-
-    qry = ' '.join([merge_str, on_create_str, return_str])
-
-    return qry
-
-
-def make_edge_qry(src, src_label, dst, dst_label, properties):
-    edge_type = properties.get('_type')
-    if edge_type is None:
-        raise MtgNeo4jError(
-            "all edges must have a type (key is \"_type\") to be added to "
-            "neo4j")
-
-    nodefmt = '({alias}:{label} {{name: "{name}"}})'
-    src_node_str = nodefmt.format(alias='src', label=src_label, name=src)
-    dst_node_str = nodefmt.format(alias='dst', label=dst_label, name=dst)
-
-    merge_str = "MATCH {src:} MATCH {dst:} MERGE (src)-[e:{etype}]->(dst)"
-    merge_str = merge_str.format(src=src_node_str,
-                                 etype=edge_type,
-                                 dst=dst_node_str, )
-
-    set_str = []
-    for (attr, val) in properties.items():
-        if attr != '_type':
-            set_str.append('e.{} = {}'.format(attr, json.dumps(val)))
-    set_str = ', '.join(set_str)
-
-    on_create_str = 'on create set {}'.format(set_str) if set_str else ''
-
-    return_str = "return id(e)"
-
-    qry = ' '.join([merge_str, on_create_str, return_str])
-
-    return qry
+    for constraint in constraints:
+        session.run(constraint.query)
 
 
 # todo: figure out whether this will work with a regular graph (not just a
@@ -119,10 +136,7 @@ def digraph_to_neo(digraph, dbconf, constraints=None):
             created in `tappedout.py`
         dbconf (dict): dictionary of connection information for the neo4j
             datbase. must contain the keys "ip", "port", "user", and "pw"
-        constraints (iterable): a list of pairs of items defining the neo4j
-            constraint. the first value in each pair is the Label (e.g.
-            :Person); the second is any one property we are demanding to be
-            unique. see `verify_constraints` for more details.
+        constraints (iterable): a list of `NeoConstraint` objects
 
     """
     url = 'bolt://{}:{}'.format(dbconf["ip"], dbconf["port"])
@@ -135,15 +149,32 @@ def digraph_to_neo(digraph, dbconf, constraints=None):
             LOGGER.info('updating nodes in neo4j')
             for i, (node_name, properties) in enumerate(
                     digraph.nodes(data=True)):
-                qry = make_node_qry(node_name, properties)
-                LOGGER.debug(qry)
-                res = session.run(qry)
+                label = properties['label']
+                attributes = {k: v
+                              for (k, v) in properties.items() if k != 'label'}
+                n = NeoNode(name=node_name,
+                            label=label,
+                            attributes=attributes)
+                LOGGER.debug(n.query)
+                _ = session.run(n.query)
 
             LOGGER.info('updating relationships in neo4j')
             for i, (src, dst, properties) in enumerate(
                     digraph.edges(data=True)):
-                src_label = digraph.node[src]['label']
-                dst_label = digraph.node[dst]['label']
-                qry = make_edge_qry(src, src_label, dst, dst_label, properties)
-                LOGGER.debug(qry)
-                res = session.run(qry)
+                src_node = NeoNode(name=src,
+                                   label=digraph.node[src]['label'])
+                dst_node = NeoNode(name=dst,
+                                   label=digraph.node[dst]['label'])
+
+                _type = properties['_type']
+                clean_properties = {k: v
+                                    for (k, v) in properties.items()
+                                    if k != '_type'}
+
+                r = NeoRelationship(src=src_node,
+                                    dst=dst_node,
+                                    _type=_type,
+                                    properties=clean_properties)
+
+                LOGGER.debug(r.query)
+                _ = session.run(r.query)
