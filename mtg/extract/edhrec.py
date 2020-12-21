@@ -35,8 +35,8 @@ logging.getLogger('urllib3').setLevel(logging.WARNING)
 EDH_REC_URL = 'https://edhrec.com/commanders'
 EDH_REC_S3_URL = 'https://edhrec-json.s3.amazonaws.com/en/commanders'
 
-HERE = os.path.dirname(os.path.realpath(__file__))
-F_EDHREC_CACHE = os.path.join(HERE, 'edhrec.parquet')
+CACHE_DIR = os.path.join(os.path.expanduser('~'), '.cache', 'mtg')
+F_EDHREC_CACHE = os.path.join(CACHE_DIR, 'edhrec.parquet')
 
 
 # ----------------------------- #
@@ -100,6 +100,8 @@ def get_commanders_and_cards(s3url=EDH_REC_S3_URL, forcerefresh=False):
 
         df = df.reset_index(drop=True)
 
+        if not os.path.exists(CACHE_DIR):
+            os.mkdir(CACHE_DIR)
         df.to_parquet(F_EDHREC_CACHE, index=False)
 
         return df
