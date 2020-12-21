@@ -49,9 +49,7 @@ def get_commanders(s3url=EDH_REC_S3_URL):
     def make_url(color_combo):
         return f"{s3url}/{''.join(color_combo).lower()}.json"
 
-    df = (pd.concat(objs=[_parse_edhrec_cardlist(url=make_url(color_combo),
-                                                 # for partner commanders:
-                                                 include_multicards=True)
+    df = (pd.concat(objs=[_parse_edhrec_cardlist(url=make_url(color_combo))
                           for color_combo
                           in colors.ALL_COLOR_COMBOS_W_COLORLESS],
                     ignore_index=True)
@@ -78,7 +76,8 @@ def get_commanders_and_cards(s3url=EDH_REC_S3_URL, forcerefresh=False):
     # download the information and save it locally. otherwise, just return the
     # cached version
     if forcerefresh or not os.path.isfile(F_EDHREC_CACHE):
-        df_cmdrs = get_commanders(s3url)[['name', 'url', 'num_decks']]
+        df_cmdrs = get_commanders(s3url)[['name', 'url', 'sanitized',
+                                          'scryfall_uri', 'num_decks']]
         df_cmdrs.loc[:, 'commander_name'] = (df_cmdrs
                                              .url
                                              .str.extract('/commanders/(.*)',
@@ -87,14 +86,16 @@ def get_commanders_and_cards(s3url=EDH_REC_S3_URL, forcerefresh=False):
         df_cmdrs.drop_duplicates(inplace=True)
 
         df = pd.DataFrame()
-        for (fullname, num_decks, urlname) in tqdm.tqdm(df_cmdrs.values):
+        for (fullname, sanitized, scryfall_uri, num_decks, urlname) in tqdm.tqdm(df_cmdrs.values):
             dfnow = get_commander_summary(urlname)
 
             if dfnow.empty:
                 continue
 
-            dfnow = dfnow[['name']].copy()
+            dfnow = dfnow[['name', 'sanitized', 'scryfall_uri']].copy()
             dfnow.loc[:, 'commander'] = fullname
+            dfnow.loc[:, 'commander_sanitized'] = sanitized
+            dfnow.loc[:, 'commander_scryfall_uri'] = scryfall_uri
             dfnow.loc[:, 'num_decks'] = num_decks
             df = pd.concat([df, dfnow], ignore_index=True)
 
@@ -109,7 +110,7 @@ def get_commanders_and_cards(s3url=EDH_REC_S3_URL, forcerefresh=False):
         return pd.read_parquet(F_EDHREC_CACHE)
 
 
-def _parse_edhrec_cardlist(url, include_multicards=False):
+def _parse_edhrec_cardlist(url):
     resp = requests.get(url)
     j0 = resp.json()
     cardlists = j0['container']['json_dict']['cardlists']
@@ -133,20 +134,23 @@ def _parse_edhrec_cardlist(url, include_multicards=False):
             return None
 
     return pd.DataFrame([{'cardlist_tag': cardlist['tag'],
-                           'url': card['url'],
-                           'label': card['label'],
-                           'name': card['name'],
-                           'price': ck_lookup(card, 'price'),
-                           'cardkingdom_url': ck_lookup(card, 'url'),
-                           'is_commander': card.get('is_commander'),
-                           'is_banned': card.get('banned'),
-                           'is_unofficial': card.get('unofficial'),
-                           'image': img_lookup(card),
-                           'legal_commander': card.get('legal_commander'),
-                           'legal_companion': card.get('legal_companion'),
-                           'legal_partner': card.get('legal_companion'), }
-                          for cardlist in cardlists
-                          for card in cardlist['cardviews']])
+                          'url': card['url'],
+                          'label': card['label'],
+                          'name': card['name'],
+                          'price': ck_lookup(card, 'price'),
+                          'cardkingdom_url': ck_lookup(card, 'url'),
+                          'is_commander': card.get('is_commander'),
+                          'is_banned': card.get('banned'),
+                          'is_unofficial': card.get('unofficial'),
+                          'image': img_lookup(card),
+                          'legal_commander': card.get('legal_commander'),
+                          'legal_companion': card.get('legal_companion'),
+                          'legal_partner': card.get('legal_companion'),
+                          'sanitized': card.get('sanitized',
+                                                card.get('sanitized_wo')),
+                          'scryfall_uri': card.get('scryfall_uri'), }
+                         for cardlist in cardlists
+                         for card in cardlist['cardviews']])
 
 
 if __name__ == '__main__':
