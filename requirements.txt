@@ -4,6 +4,7 @@ neo4j
 networkx
 numpy
 pandas
+pyarrow
 pyyaml
 requests
 tqdm

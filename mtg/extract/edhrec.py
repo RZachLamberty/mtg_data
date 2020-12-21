@@ -15,13 +15,12 @@ Usage:
 
 """
 
-import json
 import logging
 import os
 
-import lxml.html
 import pandas as pd
 import requests
+import tqdm
 
 from mtg import colors
 
@@ -34,20 +33,21 @@ LOGGER = logging.getLogger(__name__)
 logging.getLogger('urllib3').setLevel(logging.WARNING)
 
 EDH_REC_URL = 'https://edhrec.com/commanders'
+EDH_REC_S3_URL = 'https://edhrec-json.s3.amazonaws.com/en/commanders'
 
 HERE = os.path.dirname(os.path.realpath(__file__))
-F_EDHREC_CACHE = os.path.join(HERE, 'edhrec.csv')
+F_EDHREC_CACHE = os.path.join(HERE, 'edhrec.parquet')
 
 
 # ----------------------------- #
 #   Main routine                #
 # ----------------------------- #
 
-def get_commanders(baseurl=EDH_REC_URL):
+def get_commanders(s3url=EDH_REC_S3_URL):
     LOGGER.debug('getting commander summary info')
 
     def make_url(color_combo):
-        return '{}/{}'.format(baseurl, ''.join(color_combo))
+        return f"{s3url}/{''.join(color_combo).lower()}.json"
 
     df = (pd.concat(objs=[_parse_edhrec_cardlist(url=make_url(color_combo),
                                                  # for partner commanders:
@@ -58,7 +58,7 @@ def get_commanders(baseurl=EDH_REC_URL):
           .reset_index(drop=True))
 
     # this will pull in commanders as well as staples. subset to commanders only
-    df = df[df.cardlist_tag.str.contains('commander')]
+    df = df[df.is_commander]
     df.loc[:, 'num_decks'] = (df
                               .label
                               .str.extract('(\d+) decks?', expand=False)
@@ -67,19 +67,18 @@ def get_commanders(baseurl=EDH_REC_URL):
     return df
 
 
-def get_commander_summary(commander, baseurl=EDH_REC_URL):
-    LOGGER.debug('getting info for commander {}'.format(commander))
-    url = '{}/{}'.format(baseurl, commander)
+def get_commander_summary(commander, s3url=EDH_REC_S3_URL):
+    LOGGER.debug(f'getting info for commander {commander}')
+    url = f'{s3url}/{commander}.json'
     return _parse_edhrec_cardlist(url)
 
 
-def get_commanders_and_cards(baseurl=EDH_REC_URL, forcerefresh=False):
+def get_commanders_and_cards(s3url=EDH_REC_S3_URL, forcerefresh=False):
     # if the local cache version doesn't exist, or forcerefresh is True, go
     # download the information and save it locally. otherwise, just return the
     # cached version
     if forcerefresh or not os.path.isfile(F_EDHREC_CACHE):
-        df_cmdrs = (get_commanders(baseurl)
-        [['name', 'url', 'num_decks']])
+        df_cmdrs = get_commanders(s3url)[['name', 'url', 'num_decks']]
         df_cmdrs.loc[:, 'commander_name'] = (df_cmdrs
                                              .url
                                              .str.extract('/commanders/(.*)',
@@ -88,20 +87,20 @@ def get_commanders_and_cards(baseurl=EDH_REC_URL, forcerefresh=False):
         df_cmdrs.drop_duplicates(inplace=True)
 
         df = pd.DataFrame()
-        for (fullname, num_decks, urlname) in df_cmdrs.values:
+        for (fullname, num_decks, urlname) in tqdm.tqdm(df_cmdrs.values):
             dfnow = get_commander_summary(urlname)
 
             if dfnow.empty:
                 continue
 
-            dfnow = dfnow[['name']]
+            dfnow = dfnow[['name']].copy()
             dfnow.loc[:, 'commander'] = fullname
             dfnow.loc[:, 'num_decks'] = num_decks
             df = pd.concat([df, dfnow], ignore_index=True)
 
         df = df.reset_index(drop=True)
 
-        df.to_csv(F_EDHREC_CACHE, index=False)
+        df.to_parquet(F_EDHREC_CACHE, index=False)
 
         return df
     else:
@@ -110,60 +109,43 @@ def get_commanders_and_cards(baseurl=EDH_REC_URL, forcerefresh=False):
 
 def _parse_edhrec_cardlist(url, include_multicards=False):
     resp = requests.get(url)
-    root = lxml.html.fromstring(resp.text)
+    j0 = resp.json()
+    cardlists = j0['container']['json_dict']['cardlists']
 
-    # awesome dirty hack: json already built and embedded
-    js = [_.text
-          for _ in root.xpath('.//div[@class="container"]/script')
-          if _.text and 'json_dict' in _.text][0]
-
-    startstr = 'const json_dict = '
-    assert js.startswith(startstr)
-    js = js[len(startstr):-1]
-
-    j = json.loads(js)['cardlists']
-
-    if j is None:
+    if cardlists is None:
         # no info, empty df is okay
         return pd.DataFrame()
 
-    def ck_lookup(cardview, key):
-        return cardview.get('cardkingdom', {}).get(key)
+    def ck_lookup(card, key):
+        try:
+            return card['prices']['cardkingdom'][key]
+        except KeyError:
+            return None
 
-    def ck_card_lookup(cardview, key):
-        return cardview.get('cards', [{}])[0].get(key)
+    def img_lookup(card):
+        try:
+            return card['image_uris'][0]['normal']
+        except TypeError:
+            return card['image_uris'][0][0]
+        except KeyError:
+            return None
 
-    if include_multicards:
-        df_smry = pd.DataFrame([{'cardlist_tag': cardlist['tag'],
-                                 'url': cardview['url'],
-                                 'label': cardview['label'],
-                                 'name': cardview['name'],
-                                 'price': ck_lookup(cardview, 'price'),
-                                 'cardkingdom_url': ck_lookup(cardview, 'url'),
-                                 'variation': ck_lookup(cardview, 'variation'),
-                                 'is_commander': card.get('is_commander'),
-                                 'is_banned': card.get('is_banned'),
-                                 'is_unofficial': card.get('is_unofficial'),
-                                 'image': card.get('image'), }
-                                for cardlist in j
-                                for cardview in cardlist['cardviews']
-                                for card in cardview.get('cards', [])])
-    else:
-        df_smry = pd.DataFrame([{'cardlist_tag': cardlist['tag'],
-                                 'url': cardview['url'],
-                                 'label': cardview['label'],
-                                 'name': cardview['name'],
-                                 'price': ck_lookup(cardview, 'price'),
-                                 'cardkingdom_url': ck_lookup(cardview, 'url'),
-                                 'variation': ck_lookup(cardview, 'variation'),
-                                 'is_commander': ck_card_lookup(cardview,
-                                                                'is_commander'),
-                                 'is_banned': ck_card_lookup(cardview,
-                                                             'is_banned'),
-                                 'is_unofficial': ck_card_lookup(
-                                     cardview, 'is_unofficial'),
-                                 'image': ck_card_lookup(cardview, 'image'), }
-                                for cardlist in j
-                                for cardview in cardlist['cardviews']])
+    return pd.DataFrame([{'cardlist_tag': cardlist['tag'],
+                           'url': card['url'],
+                           'label': card['label'],
+                           'name': card['name'],
+                           'price': ck_lookup(card, 'price'),
+                           'cardkingdom_url': ck_lookup(card, 'url'),
+                           'is_commander': card.get('is_commander'),
+                           'is_banned': card.get('banned'),
+                           'is_unofficial': card.get('unofficial'),
+                           'image': img_lookup(card),
+                           'legal_commander': card.get('legal_commander'),
+                           'legal_companion': card.get('legal_companion'),
+                           'legal_partner': card.get('legal_companion'), }
+                          for cardlist in cardlists
+                          for card in cardlist['cardviews']])
 
-    return df_smry
+
+if __name__ == '__main__':
+    df = get_commanders_and_cards(forcerefresh=True)
