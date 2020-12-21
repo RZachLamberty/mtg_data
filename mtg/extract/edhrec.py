@@ -106,7 +106,7 @@ def get_commanders_and_cards(s3url=EDH_REC_S3_URL, forcerefresh=False):
 
         return df
     else:
-        return pd.read_csv(F_EDHREC_CACHE)
+        return pd.read_parquet(F_EDHREC_CACHE)
 
 
 def _parse_edhrec_cardlist(url, include_multicards=False):
