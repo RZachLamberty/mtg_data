@@ -16,6 +16,7 @@ Usage:
 """
 
 import collections as _collections
+import functools
 import logging as _logging
 import os as _os
 import re as _re
@@ -40,6 +41,7 @@ _LOGGER.setLevel(_logging.DEBUG)
 _URL = 'http://tappedout.net/api/inventory/{owner:}/board/'
 _FIELDNAMES = ['Name', 'Edition', 'Qty', 'Foil', ]
 _FNAME = _os.path.join(_os.sep, 'tmp', 'mtg_inventory.csv')
+_SESS = _requests.Session()
 
 
 class TappedOutError(Exception):
@@ -50,25 +52,31 @@ class TappedOutError(Exception):
 #   generic functions           #
 # ----------------------------- #
 
-def get_inventory(url=_URL, owner='ndlambo', pagelength=500):
+@functools.lru_cache()
+def _get_inventory_page(url, pagelength, start):
+    resp = _SESS.get(url, params={'pagelength': pagelength, 'start': start})
+    try:
+        return resp.json()
+    except _JSONDecodeError:
+        print(resp.status_code)
+        raise
+
+
+@functools.lru_cache()
+def get_inventory(url=_URL, owner='ndlambo', pagelength=50):
     """simple inventory json getter"""
     inventory = []
-    params = {'length': pagelength, 'start': 0, }
+
+    url = url.format(owner=owner)
+    start = 0
 
     while True:
-        resp = _requests.get(url.format(owner=owner), params=params)
-
-        # we *should* be able to read everything returned this way
-        try:
-            j = resp.json()
-        except _JSONDecodeError:
-            print(resp.status_code)
-            raise
+        j = _get_inventory_page(url, pagelength, start)
 
         # j['data'] is a possibly-empty list. iterate until it's empty.
         if j['data']:
             inventory += j['data']
-            params['start'] += pagelength
+            start += pagelength
             _LOGGER.debug('collected {} records so far'.format(len(inventory)))
         else:
             break
@@ -95,7 +103,8 @@ def get_inventory(url=_URL, owner='ndlambo', pagelength=500):
             record['px'] = None
 
         try:
-            record.update(mtgjson[record['name'], record['set']])
+            set = 'PRM' if record['set'] == '000' else record['set']
+            record.update(mtgjson[record['name'], set])
         except:
             pass
 
@@ -285,7 +294,8 @@ def tappedout_categories_to_tags(deckid, categories):
 def binder_summary(url=_URL, owner='ndlambo', bulkthresh=0.30, mainthresh=1.00):
     """break things down as if they're in a binder"""
     keepkeys = ['name', 'qty', 'foil', 'px', 'tla', 'type', 'tcg-foil-price',
-                'colorIdentity', 'power', 'toughness', 'cmc', 'set']
+                'colorIdentity', 'power', 'toughness', 'convertedManaCost',
+                'set', 'other_collections']
     inventory = _pd.DataFrame(get_inventory(url, owner))[keepkeys]
 
     # sets are annoying; could be strings or lists. fix
@@ -426,10 +436,34 @@ def binder_summary(url=_URL, owner='ndlambo', bulkthresh=0.30, mainthresh=1.00):
     # sorted in with their colors)
     inventory.loc[:, 'is_land'] = inventory.mytype == 'Land'
 
+    # in any decks we care about?
+    decks_we_care_about = {'',
+                           '/mtg-decks/06-06-18-esper-blink/',
+                           '/mtg-decks/08-06-17-fevered-thing-tutelage/',
+                           '/mtg-decks/12-07-19-jeskai-edh/',
+                           '/mtg-decks/13-02-16-mizzix-of-the-izmagnus-edh/',
+                           '/mtg-decks/19-02-17-AGL-breya-edh/',
+                           '/mtg-decks/19-09-19-grixis-rogues/',
+                           '/mtg-decks/23-03-17-gobrins/',
+                           '/mtg-decks/doubling-season-edh/',
+                           '/mtg-decks/havoc-festival-edh/',
+                           '/mtg-decks/mtggoldfish-restore-balance/',
+                           '/mtg-decks/mtggoldfish-uw-tempered-steel/',
+                           '/mtg-decks/sprite-draw/',
+                           '/mtg-decks/zadaaaaaahhhhhhh-copy/'}
+    def in_decks(oc):
+        try:
+            return len({c['url'] for c in oc['collections']}.intersection(decks_we_care_about)) != 0
+        except:
+            return False
+
+    inventory.loc[:, 'in_decks'] = ~inventory.other_collections.isna()
+
     # finally, sort everything
-    inventory = inventory.sort_values(
-        by=['card_value', 'is_land', 'colorstr', 'mytype', 'cmc', 'power',
-            'toughness', 'name', 'foil'])
+    inventory.sort_values(
+        by=['card_value', 'is_land', 'colorstr', 'mytype', 'convertedManaCost',
+            'name', 'foil'],
+        inplace=True)
 
     return inventory
 
