@@ -122,7 +122,7 @@ def _parse_edhrec_cardlist(url):
     def ck_lookup(card, key):
         try:
             return card['prices']['cardkingdom'][key]
-        except KeyError:
+        except (KeyError, TypeError):
             return None
 
     def img_lookup(card):
